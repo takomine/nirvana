@@ -66,7 +66,7 @@ def test_shipped_plan_is_blocked_for_the_right_reasons(tmp_path):
     assert res.regime.name == "risk_off"
     assert res.actions == []
     assert "exceeds the 2% cap" in text                 # BTC plan risk with gap + fees
-    assert "stop room 7.7%" in text                     # HYPE-2 vs 48
+    assert "stop room 13.5%" in text                    # HYPE-2 at 52 vs wrong-if 45
     assert "below the exchange minimum" in text         # HYPE-1 ₱300 < 5 USDT
     assert "Risk-off: only resting limit" in text       # BTC-1 marketable
 

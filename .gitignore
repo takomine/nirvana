@@ -6,3 +6,4 @@ reports/
 __pycache__/
 *.pyc
 .venv-test/
+knowledge/quant/prices.db

@@ -44,7 +44,7 @@ coins:
   HYPE:
     status: active
     narrative: perp-dex
-    wrong_if: 48                          # conflict: watchlist said 45. Resolve it.
+    wrong_if: 45                          # Loot export: $45 supersedes the $48 said once on Nov 21
     fill_by: 2026-12-04
     on_deadline: cancel
     tranches:

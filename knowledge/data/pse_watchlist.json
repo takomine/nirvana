@@ -1,0 +1,342 @@
+{
+ "as_of": "2026-11-20T17:27:00+08:00",
+ "psei_midday": 5500.9,
+ "liquidity_threshold": "Core: avg daily value >= P20M over the 8 DQR sessions available (Oct 27-30, Nov 10-12, Nov 16). Satellite (half size): P10-20M.",
+ "rules": "Max 10 active, up to 6 bench, max 2 per conglomerate group. ONE regime rule (replaces the two conflicting lines of Nov 17-18): PSEi closed 5,306.98 on Nov 20, below 5,400. While the PSEi closes below 5,400: no new names, existing limits only, total PSE deployment capped at 30% of the budget (dividend names first). Above 5,400 after MSCI day (Nov 27): normal sizing. A close below 5,000: pause all buys and review.",
+ "active": [
+  {
+   "ticker": "URC",
+   "name": "Universal Robina (snacks, coffee, sugar; Gokongwei group)",
+   "sector": "Consumer staples",
+   "price": 60.2,
+   "status": "KEEP",
+   "verdict": "Buy in parts",
+   "limits": [
+    61.0,
+    58.0
+   ],
+   "max_price": 62.0,
+   "rethink_close_below": 55.0,
+   "weight_pct": 15,
+   "catalyst": "Company buying back its own stock: 800,000 shares at ~P60.65-61.50 on Nov 16 alone, under a fresh P8B buyback extension approved Nov 5. Q3 operating income +14%, sales +7%. Nov 17: another 290K shares bought back @ ~P61.07 (P17.7M).",
+   "risks": "Consumer spending weak (confidence at 5-year low); oil costs.",
+   "sources": [
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=ac9192caf673b96464d70b69f0a3140b",
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=9277117598721fab64d70b69f0a3140b",
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=a2e9cc48cc8cfe7764d70b69f0a3140b"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 136.1,
+   "net_foreign_8d_mPHP": 87.1,
+   "board_lot_before_nov23": 10,
+   "per_10k_budget": {
+    "pesos": 1500.0,
+    "shares_before_nov23": 20,
+    "shares_from_nov23": 24
+   }
+  },
+  {
+   "ticker": "MONDE",
+   "name": "Monde Nissin (Lucky Me noodles, SkyFlakes)",
+   "sector": "Consumer staples",
+   "price": 6.2,
+   "status": "ADD",
+   "verdict": "Buy in parts",
+   "limits": [
+    6.2,
+    6.0
+   ],
+   "max_price": 6.35,
+   "rethink_close_below": 5.65,
+   "weight_pct": 10,
+   "catalyst": "9M core profit +16.1%; dividend raised 8.3% to P0.26/share (about 4.1% of price in one payment). Record Nov 25, ex-date Nov 24, so own by close Mon Nov 23; safer to buy by Fri Nov 20 because Nov 23 is the new trading engine's first day. Net cash, debt/equity 0.10. Foreigners net bought ~P62M over the 8 sessions sampled.",
+   "risks": "Price drops ~P0.26 on ex-date (Nov 24). Fair-value loss on protein business guaranty (non-cash).",
+   "dividend": {
+    "dps": 0.26,
+    "ex": "2026-11-24",
+    "record": "2026-11-25",
+    "pay": "2026-12-23",
+    "own_by": "2026-11-23",
+    "status": "confirmed (PSE Edge)"
+   },
+   "sources": [
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=e460b07de737b7e464d70b69f0a3140b",
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=fa2c242d411f8ccc64d70b69f0a3140b",
+    "https://stockanalysis.com/quote/pse/MONDE/statistics/"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 107.7,
+   "net_foreign_8d_mPHP": 61.9,
+   "board_lot_before_nov23": 100,
+   "per_10k_budget": {
+    "pesos": 1000.0,
+    "shares_before_nov23": 100,
+    "shares_from_nov23": 160
+   }
+  },
+  {
+   "ticker": "JFC",
+   "name": "Jollibee Foods",
+   "sector": "Consumer (restaurants)",
+   "price": 148.5,
+   "status": "KEEP (levels cut by the P2.11 dividend for the Nov 23 ex-date)",
+   "verdict": "Buy in parts",
+   "limits": [
+    148.0
+   ],
+   "max_price": 150.0,
+   "rethink_close_below": 143.0,
+   "weight_pct": 10,
+   "catalyst": "P2.11 dividend CONFIRMED on PSE Edge (C08010-2026): ex Nov 23, record Nov 24, pay Dec 16, so own by close Fri Nov 20. Q3 2026: system-wide sales, revenue and operating income up double digits (Nov 10 release).",
+   "risks": "Only ~1.4% dividend; price drops by it on Nov 23. 52-week high P219.40, so still in a long downtrend.",
+   "dividend": {
+    "dps": 2.11,
+    "ex": "2026-11-23",
+    "record": "2026-11-24",
+    "pay": "2026-12-16",
+    "own_by": "2026-11-20",
+    "status": "confirmed (PSE Edge C08010-2026)"
+   },
+   "sources": [
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=633dd2901093995a64d70b69f0a3140b",
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=24e2583e4ddb6db564d70b69f0a3140b"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 72.5,
+   "net_foreign_8d_mPHP": 104.9,
+   "board_lot_before_nov23": 10,
+   "per_10k_budget": {
+    "pesos": 1000.0,
+    "shares_before_nov23": 0,
+    "shares_from_nov23": 6
+   }
+  },
+  {
+   "ticker": "PGOLD",
+   "name": "Puregold (grocery retail)",
+   "sector": "Consumer retail",
+   "price": 39.75,
+   "status": "KEEP (limit raised P39.20 -> P40.00)",
+   "verdict": "Wait for price",
+   "limits": [
+    40.0
+   ],
+   "max_price": 40.5,
+   "rethink_close_below": 37.5,
+   "weight_pct": 10,
+   "catalyst": "9M net income +18.8% to P8.67B, revenue +11.7%, same-store sales +4.5% (Puregold) / +14.7% (S&R). Up 3.1% today, a top gainer.",
+   "risks": "Already bounced; don't chase. Before Nov 23 the board lot is 100 shares (~P4,000).",
+   "sources": [
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=8db66e997773d75964d70b69f0a3140b"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 31.9,
+   "net_foreign_8d_mPHP": -9.7,
+   "board_lot_before_nov23": 100,
+   "per_10k_budget": {
+    "pesos": 1000.0,
+    "shares_before_nov23": 0,
+    "shares_from_nov23": 24
+   }
+  },
+  {
+   "ticker": "BDO",
+   "name": "BDO Unibank (largest bank; SM group)",
+   "sector": "Banks",
+   "price": 119.0,
+   "status": "KEEP",
+   "verdict": "Wait for price",
+   "limits": [
+    118.0
+   ],
+   "max_price": 119.0,
+   "rethink_close_below": 112.0,
+   "weight_pct": 15,
+   "catalyst": "9M profit P63.6B (flat), loans +16%, bad-loan ratio down to 1.60%; book value P123.6/share so it trades near 1x book. Foreigners net bought ~P351M over 8 sampled sessions and were buyers again this morning.",
+   "risks": "Rate hikes have not widened bank margins (CreditSights); BSP decision Dec 17.",
+   "sources": [
+    "https://www.bdo.com.ph/about-bdo/learn/news-and-features/bdo-9m-2026-net-income",
+    "https://asianbankingandfinance.net/retail-banking/in-focus/rate-hikes-fail-lift-major-philippine-bank-margins"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 437.8,
+   "net_foreign_8d_mPHP": 351.4,
+   "board_lot_before_nov23": 10,
+   "per_10k_budget": {
+    "pesos": 1500.0,
+    "shares_before_nov23": 10,
+    "shares_from_nov23": 12
+   }
+  },
+  {
+   "ticker": "GCASH",
+   "name": "Mynt / GCash (e-wallet, IPO Oct 20 at P6.60)",
+   "sector": "Fintech",
+   "price": 7.08,
+   "status": "KEEP (half size: new listing)",
+   "verdict": "Buy in parts",
+   "limits": [
+    7.2
+   ],
+   "max_price": 7.3,
+   "rethink_close_below": 6.6,
+   "weight_pct": 7.5,
+   "catalyst": "Strongest foreign buying on the board: ~P860M net over 8 sampled sessions; 9M revenue and profit up double digits. Price is 10% above the IPO price.",
+   "risks": "The IPO price-support window (UBS stabilization) closes Nov 18; UBS could only buy below P6.60 anyway, so it has not been propping up today's price, but watch the first days after. Lock-ups end mid-April 2027.",
+   "sources": [
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=fe8cbe656102e89564d70b69f0a3140b",
+    "https://businessmirror.com.ph/2026/10/27/dancing-on-one-green-shoe/",
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=255a033a9dee0e7664d70b69f0a3140b"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 646.2,
+   "net_foreign_8d_mPHP": 859.9,
+   "board_lot_before_nov23": 100,
+   "per_10k_budget": {
+    "pesos": 750.0,
+    "shares_before_nov23": 100,
+    "shares_from_nov23": 103
+   }
+  },
+  {
+   "ticker": "SM",
+   "name": "SM Investments (Sy family holding company: malls, BDO, retail)",
+   "sector": "Holding firms",
+   "price": 535.5,
+   "status": "ADD (watch for a dip)",
+   "verdict": "Wait for price",
+   "limits": [
+    535.0
+   ],
+   "max_price": 540.0,
+   "rethink_close_below": 515.0,
+   "weight_pct": 10,
+   "catalyst": "9M net income +9% to P70B. Foreigners net bought ~P394M over 8 sampled sessions and again this morning. Henry Sy rule: buy the market leader on panic dips.",
+   "risks": "52-week high P745.50, still in a downtrend. Board lot 10 shares (~P5,350) until Nov 23.",
+   "sources": [
+    "https://edge.pse.com.ph/openDiscViewer.do?edge_no=91799b190b0905ca64d70b69f0a3140b",
+    "https://x.com/starallsec/status/2122540462389284941"
+   ],
+   "price_time": "2026-11-20 close (PSE DQR)",
+   "avg_daily_value_mPHP": 1277.4,
+   "net_foreign_8d_mPHP": 394.4,
+   "board_lot_before_nov23": 10,
+   "per_10k_budget": {
+    "pesos": 1000.0,
+    "shares_before_nov23": 0,
+    "shares_from_nov23": 1
+   }
+  }
+ ],
+ "adds": [],
+ "drops": [
+  {
+   "ticker": "ICT",
+   "to": "bench",
+   "reason": "Close P668 below P700 rethink; Durban licence ultimatum; heavy foreign selling"
+  },
+  {
+   "ticker": "CBC",
+   "to": "bench",
+   "reason": "SM-group cap (3 names > max 2); liquidity now satellite"
+  },
+  {
+   "ticker": "AC",
+   "to": "out",
+   "reason": "Bench full; tender terms never confirmed; foreign selling"
+  },
+  {
+   "ticker": "TEL",
+   "to": "out",
+   "reason": "Bench full; MSCI deletion and foreign selling (-P231M over 10 sessions)"
+  }
+ ],
+ "bench": [
+  {
+   "ticker": "AREIT",
+   "note": "Dividend P0.679 own by Nov 24 [reported by PSE Edge-sourced calendar]; re-add trigger P33 or a BSP hold",
+   "last_close": 35.0,
+   "last_close_date": "2026-11-17",
+   "price": 34.8,
+   "price_time": "2026-11-20 close (PSE DQR)"
+  },
+  {
+   "ticker": "BPI",
+   "note": "Re-add if provisions ease in Q4",
+   "last_close": 99.7,
+   "last_close_date": "2026-11-17",
+   "price": 99.2,
+   "price_time": "2026-11-20 close (PSE DQR)"
+  },
+  {
+   "ticker": "MER",
+   "note": "MSCI Standard deletion, PH trade day likely Nov 27 close; recheck Dec 1",
+   "last_close": 400.0,
+   "last_close_date": "2026-11-17",
+   "price": 378.0,
+   "price_time": "2026-11-20 close (PSE DQR)"
+  },
+  {
+   "ticker": "PNB",
+   "note": "9M profit +15%, near 52-week high, foreign buying; candidate if a slot opens",
+   "last_close": 80.8,
+   "last_close_date": "2026-11-17",
+   "price": 79.0,
+   "price_time": "2026-11-20 close (PSE DQR)"
+  },
+  {
+   "ticker": "ICT",
+   "note": "Closed P668 on Nov 20, below the P700 rethink level: Transnet gave ICTSI 3 months to fix Durban Gateway Terminal or risk the licence (Moneyweb/Splash247, Nov 19). Foreign net selling ~-P1.81B over 10 DQR sessions. Re-check after MSCI day (Nov 27) and only after 2-3 days of base.",
+   "last_close": 668.0,
+   "last_close_date": "2026-11-20",
+   "price": 668.0,
+   "price_time": "2026-11-20 close (PSE DQR)"
+  },
+  {
+   "ticker": "CBC",
+   "note": "Benched to respect the max-2-per-group cap (SM group: SM, BDO, CBC). Liquidity slipped to satellite (~P19.8M/day). Fundamentals still good (9M +12%, P/B ~0.68); first in line if BDO or SM leaves.",
+   "last_close": 50.0,
+   "last_close_date": "2026-11-20",
+   "price": 50.0,
+   "price_time": "2026-11-20 close (PSE DQR)"
+  }
+ ],
+ "key_dates": {
+  "2026-11-18": "GCASH price-stabilization window closes",
+  "2026-11-20": "Own-by for JFC P2.11 (and safest day to buy MONDE)",
+  "2026-11-23": "New PSE trading engine, 1-share lots; JFC ex-date; own-by for MONDE",
+  "2026-11-24": "Own-by for AREIT (bench); MONDE ex-date",
+  "2026-11-27": "Likely MSCI trade day for PH (MSCI effective close Nov 30; PSE closed Nov 30)",
+  "2026-11-30": "PSE closed (Bonifacio Day)",
+  "2026-12-01": "Recheck MER/TEL/ICT after MSCI",
+  "2026-12-17": "BSP rate decision"
+ },
+ "psei_close_2026-11-17": 5500.88,
+ "last_light_check": "2026-11-20 Friday reconstitution: PSEi 5,306.98 (-3.12%, DQR). ICT, CBC to bench; AC, TEL out of bench; JFC levels ex-div adjusted (buy 148, rethink 143); no adds (PSEi below 5,400). Hypothetical limit touches today: MONDE 6.20 (low 6.19), PGOLD 40 (low 39.05), URC 61 (low 59.05). BDO 118 (low 119) and SM 535 (low 535.5) not reached.",
+ "net_foreign_2026-11-17_mPHP": -133.86,
+ "net_foreign_2026-11-18_mPHP": -33.57,
+ "psei_close_2026-11-18": 5511.84,
+ "psei_close_2026-11-19": 5477.91,
+ "psei_close_2026-11-20": 5306.98,
+ "change_log": [
+  {
+   "date": "2026-11-20",
+   "time": "5:27 PM Manila",
+   "type": "FRIDAY",
+   "adds": [],
+   "drops": [
+    "ICT",
+    "CBC"
+   ],
+   "reasons": {
+    "ICT": "rethink close + Durban licence risk",
+    "CBC": "group cap",
+    "AC": "bench trim",
+    "TEL": "bench trim",
+    "JFC": "levels cut by P2.11 dividend"
+   },
+   "summary": "2026-11-20 Friday reconstitution: PSEi 5,306.98 (-3.12%, DQR). ICT, CBC to bench; AC, TEL out of bench; JFC levels ex-div adjusted (buy 148, rethink 143); no adds (PSEi below 5,400). Hypothetical limit touches today: MONDE 6.20 (low 6.19), PGOLD 40 (low 39.05), URC 61 (low 59.05). BDO 118 (low 119) and SM 535 (low 535.5) not reached.",
+   "card_text": "ICT, CBC to bench \u00b7 no adds while PSEi < 5,400"
+  }
+ ]
+}

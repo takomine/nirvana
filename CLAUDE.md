@@ -22,10 +22,17 @@ If tako wants one of these changed, explain the risk and get explicit confirmati
 2. If you change `plan.yaml`: run a dry check if data is reachable. Otherwise verify by hand:
    - each tranche's stop room `(entry - wrong_if)/entry` >= 2.7 x ATR14 for that coin
    - worst-case loss per coin (incl. 3% gap + fees) <= 2% of the budget
-   - each tranche >= ~₱350 (Binance minimum is 5 USDT)
+   - each tranche big enough to stay stop-sellable: worth >= ~6 USDT AT THE WRONG-IF (usually ₱600-700+);
+     the engine blocks smaller ones
    - fresh `manual_inputs` timestamps (ETF flows go stale after 36h, FX after 7 days)
    - a new `plan_id` when starting a fresh plan (it resets stopped coins and cancels old-plan orders)
 3. Commit messages say what changed for trading, e.g. `plan: HYPE ladder 58/54, wrong-if 41`.
+
+## Research
+Use `knowledge/` (see knowledge/README.md) before proposing levels: `skills/quant-lab` and `quant/FINDINGS.md`
+override gut feel, and `skills/crypto-trader-playbook` covers the entry/exit style. Quote numbers only from data
+(prices.db, Binance, or fresh web sources), with sample sizes. tako trades PSE and US stocks too; those skills
+are for research and advice only. Nirvana trades only Binance spot crypto.
 
 ## Layout
 - `nirvana/engine.py`: all rules (pure logic; returns decisions + actions)
@@ -33,3 +40,4 @@ If tako wants one of these changed, explain the risk and get explicit confirmati
 - `nirvana/brokers.py`: Binance REST (signed) and the paper broker
 - `config.yaml`: standing risk parameters. `plan.yaml`: current levels.
 - `deploy/`: systemd units and the auto-updater
+- `knowledge/`: imported Loot playbooks, watchlists, scorecard, quant lab

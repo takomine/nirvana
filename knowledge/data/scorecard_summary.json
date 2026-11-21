@@ -1,0 +1,163 @@
+{
+ "as_of": "2026-11-20T17:25+08:00",
+ "window": "2026-11-12 to 2026-11-20",
+ "method": {
+  "marks": "PSE: Nov 20 close (PSE DQR); US: Nov 19 close (Yahoo; Nov 20 US session not yet traded); crypto: CoinGecko live ~5:25 PM Manila Nov 20 (Nov 20 UTC candle still open)",
+  "benchmarks": "PSE vs PSEi (DQR: 5,500.9 midday Nov 17 -> 5,306.98 Nov 20), US vs SPY (Nov 17 close 732.44 -> Nov 19 715.87), crypto vs BTC hold (64,354 Nov 18 12:44 PM -> 61,671)",
+  "fills": "hypothetical limit fill when a later session low <= limit (fill at min(limit, open)); ladders equal-weight per filled part; unfilled = cash (0%)",
+  "alpha": "strategy return minus benchmark return from call time to mark",
+  "resolution": "resolved on wrong-if close, add-trigger close, or short horizon end; everything else open with a lean (ahead/behind) only",
+  "not_done": "skill text for call-scorecard was not loadable in this run (no Skill tool); method follows ct-poster-scoring + quant-lab FINDINGS conventions"
+ },
+ "tally": {
+  "total": 57,
+  "unverifiable": 5,
+  "resolved": 7,
+  "hits": 7,
+  "misses": 0,
+  "open": 45,
+  "open_ahead": 35,
+  "open_behind": 7,
+  "open_no_data": 3
+ },
+ "by_market": {
+  "PSE": {
+   "calls": 22,
+   "graded_with_alpha": 12,
+   "mean_alpha_pct": 3.27,
+   "filled_limit_calls": 6,
+   "mean_filled_return_pct": -0.37,
+   "mean_mae_filled_pct": -2.38,
+   "benchmark_ret_pct": -3.53,
+   "benchmark": "PSEi"
+  },
+  "US": {
+   "calls": 26,
+   "graded_with_alpha": 21,
+   "mean_alpha_pct": 1.8,
+   "filled_limit_calls": 9,
+   "mean_filled_return_pct": -1.11,
+   "mean_mae_filled_pct": -1.51,
+   "benchmark_ret_pct": -2.26,
+   "benchmark": "SPY"
+  },
+  "crypto": {
+   "calls": 9,
+   "graded_with_alpha": 8,
+   "mean_alpha_pct": 3.23,
+   "filled_limit_calls": 3,
+   "mean_filled_return_pct": -0.09,
+   "mean_mae_filled_pct": -1.07,
+   "benchmark_ret_pct": -4.17,
+   "benchmark": "BTC"
+  }
+ },
+ "best_call": {
+  "id": "2026-11-19-ANT-skiprule",
+  "why": "No buy at first trade / skip above $95.45: ANT opened $111.50, closed $97.17 (-12.9%), after-hours $92.60 (-17%)"
+ },
+ "runner_up": {
+  "id": "2026-11-17-ICT-hold",
+  "why": "On hold until MSCI day: ICT 720 -> 668 (-7.2%) vs PSEi -3.5%; closed below 700 rethink on Transnet Durban licence ultimatum"
+ },
+ "worst_call": {
+  "id": "2026-11-18-NVDA-wl",
+  "why": "150 limit filled Nov 19; close 145.98 = -2.7%, alpha -0.4 pts vs SPY; only US fill clearly behind"
+ },
+ "worst_asset_move_after_add": {
+  "id": "2026-11-18-ZEC-wl",
+  "why": "Added at $953.2 as strongest 90-day trend; now $848 (-11.0%); $865 limit filled today, -1.9%"
+ },
+ "drops_behind": [
+  "2026-11-17-BPI-drop (BPI -0.5% vs PSEi -3.5%: +3.0 pts against us)",
+  "2026-11-17-AREIT-drop (-0.6% vs -3.5%: +3.0 pts against us)"
+ ],
+ "process_flags": [
+  {
+   "ids": [
+    "2026-11-17-CBC-wl",
+    "2026-11-17-SM-wl",
+    "2026-11-17-BDO-wl"
+   ],
+   "issue": "SM group held 3 active names (SM, BDO, CBC) vs the max-2-per-group cap in pse-watchlist-rebalance; not caught for 4 days"
+  },
+  {
+   "ids": [
+    "2026-11-18-PSE-mostly-cash"
+   ],
+   "issue": "Two conflicting PSE regime rules: brief said 'close <5,400 = stay in cash', watchlist rules said 'keep the rest for PSEi 5,000-5,300'. PSEi closed 5,306.98 on Nov 20: both fire at once"
+  },
+  {
+   "ids": [
+    "2026-11-20-BTC-sitrep",
+    "2026-11-18-BTC-wl"
+   ],
+   "issue": "BTC wrong-if $52,300 in the Nov 20 call but $57,000 still in crypto_watchlist.json and the skill locked plan"
+  },
+  {
+   "ids": [
+    "2026-11-20-JFC-midday"
+   ],
+   "issue": "Optional dividend buy at 1.41% yield, below the quant-lab dividend-capture floor of 2.5%"
+  },
+  {
+   "ids": [
+    "2026-11-18-XOM-wl",
+    "2026-11-18-XLE-wl"
+   ],
+   "issue": "Buy limits set ABOVE market (XOM 163 vs 160.58; XLE 61.5 vs 61.29) = market buys; both filled at once and fell (-2.5%, -1.0%)"
+  }
+ ],
+ "calibration": {
+  "note": "Only 8 of 57 calls carry a confidence number (all Nov 20, none resolved except MER-midday n/a). Calibration not measurable yet. Backfilled calls had no confidence recorded.",
+  "resolved_hit_rate": "7/7",
+  "caution": "All 7 resolved hits are wait/stay-in-cash calls in a week when PSEi fell 3.5%, SPY 2.3%, BTC 4.2%. That is defensive positioning paying off (beta), not proven stock-picking skill."
+ },
+ "process_vs_outcome": [
+  {
+   "id": "2026-11-19-ANT-skiprule",
+   "process": "good",
+   "outcome": "good"
+  },
+  {
+   "id": "2026-11-17-ICT-hold",
+   "process": "good",
+   "outcome": "good"
+  },
+  {
+   "id": "2026-11-20-JFC-midday",
+   "process": "bad (below yield floor)",
+   "outcome": "small loss so far (-0.9% before P2.11 dividend)"
+  },
+  {
+   "id": "2026-11-17-CBC-wl",
+   "process": "bad (group cap)",
+   "outcome": "good so far (+2.0% from 49 fill)"
+  },
+  {
+   "id": "2026-11-17-BPI-drop",
+   "process": "ok (fundamental reason)",
+   "outcome": "bad so far (+3.0 pts vs PSEi)"
+  },
+  {
+   "id": "2026-11-20-ICT-midday",
+   "process": "good (thesis-break news, no knife catch)",
+   "outcome": "bad so far (+3.8% bounce into close)"
+  }
+ ],
+ "known_biases": [
+  "Defensive/beta bias: wins this week came from staying in cash during a broad selloff; do not read the 7/7 resolved record as skill.",
+  "Rule drift: 4 calls contradicted an existing written rule (group cap, regime rule, BTC wrong-if, dividend yield floor).",
+  "Near-market limits in a downtrend: 18 hypothetical fills, all had an immediate adverse move (avg MAE in by_market); first limits within ~1-2% of price fill on the next red day.",
+  "Early fundamental drops: BPI and AREIT were dropped and then held up better than the index (defensive names in a selloff). One week only.",
+  "Missing confidence numbers on most calls: calibration impossible."
+ ],
+ "sample_warning": "57 calls, only 7 resolved, all within 1-4 sessions in one down week. Far too small to trust any hit rate; treat as process feedback only.",
+ "unverifiable": [
+  "2026-11-12-MER-early",
+  "2026-11-12-MEG-early",
+  "2026-11-12-ICT-early",
+  "2026-11-12-SCC-early",
+  "2026-11-13-crypto-early-plans"
+ ]
+}
