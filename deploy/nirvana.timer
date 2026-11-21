@@ -1,0 +1,11 @@
+# /etc/systemd/system/nirvana.timer
+[Unit]
+Description=Run Nirvana daily at 08:05 Manila
+
+[Timer]
+OnCalendar=*-*-* 08:05:00 Asia/Manila
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

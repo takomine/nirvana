@@ -1,0 +1,11 @@
+# /etc/systemd/system/nirvana-update.service  (replace YOURUSER)
+[Unit]
+Description=Nirvana: pull, test and deploy new commits from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=YOURUSER
+Environment=APP=/home/YOURUSER/nirvana
+ExecStart=/home/YOURUSER/nirvana/deploy/update.sh

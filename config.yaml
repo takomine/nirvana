@@ -1,0 +1,68 @@
+# Nirvana: standing parameters. Change rarely.
+# Per-coin levels live in plan.yaml, which you rewrite with each new plan.
+
+account:
+  budget_php: 10000          # the money this bot is allowed to manage
+  quote: USDT
+
+venue:
+  # binance          = real Binance spot (orders need --mode live)
+  # binance_testnet  = https://testnet.binance.vision (fake money, real API)
+  # manual           = PDAX or any exchange: bot prints order tickets, you place them
+  #                    by hand and record fills with `record-fill`
+  name: binance
+  fee_pct: 0.10              # per side
+  fee_in_base: true          # Binance takes the fee from the coin you buy (set false if paying fees in BNB)
+
+risk:
+  risk_pct_target: 1.5       # sizing hint for watch coins (1-2%)
+  max_risk_pct_per_coin: 2.0 # worst-case loss per coin idea, incl. gap + fees (hard cap)
+  max_total_risk_pct: 6.0    # worst-case loss across ALL coins at once (hard cap)
+  max_coin_pct: 30           # max % of budget in one coin (positions + open orders + planned)
+  max_deployed_pct:          # max % of budget deployed, by regime
+    risk_on: 70
+    chop: 70
+    risk_off: 50
+  min_stop_atr_mult: 2.7     # every buy must sit >= 2.7x ATR14 above the wrong-if ("about 3x")
+  stop_gap_buffer_pct: 3.0   # daily-close stops sell after the close; assume this much extra slippage
+  stop_sell_slippage_pct: 2.0  # stop sells are IOC limits this far below the bid
+  max_ladder_depth_pct: 8    # warn if a tranche sits deeper than this below the first tranche
+  memecoin_max_pct: 10
+  narrative_max_coins: 2
+  max_active_coins: 10
+
+liquidity:                   # 7-day average quote volume, USDT/day
+  core_min: 50000000
+  satellite_min: 15000000    # satellite: resting limits only, no marketable buys
+
+regime:
+  fng_extreme_fear: 15       # F&G below this = risk-off signal
+  fng_greed_trim: 80         # F&G above this = trim alert, and blocks risk-on
+  fng_max_age_hours: 48
+  manual_max_age_hours: 36   # manual inputs (ETF flows) older than this count as UNKNOWN
+
+data:
+  min_history_days: 30       # fewer closed daily candles than this = no trading that coin
+  fx_warn_days: 3            # php_per_usdt older than this: warning
+  fx_block_days: 7           # older than this: no new buys
+
+execution:
+  # Live mode always asks you to type YES per order, and refuses to run without a terminal.
+  # If true, `run --mode live --unattended` (e.g. from cron) may execute ONLY
+  # risk-reducing actions: wrong-if stop sells and cancelling buy orders.
+  # It can never buy. Recommended: true, so a stop still fires if you're asleep.
+  unattended_risk_reducing: false
+
+notify:
+  # Telegram: set env vars TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (your own bot via @BotFather)
+  telegram: true
+
+advisor:                     # optional Claude review; never places orders
+  enabled: true
+  model: claude-sonnet-5-5
+  monthly_cap_usd: 80        # hard cap; calls that could exceed it are skipped
+  max_output_tokens: 2500
+  prices_per_mtok:           # USD per million tokens (input, output). Check docs before changing models.
+    claude-haiku-5-5: [0.10, 0.50]
+    claude-sonnet-5-5: [2.00, 10.00]
+    claude-opus-5-5: [4.00, 20.00]

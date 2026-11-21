@@ -1,0 +1,18 @@
+# /etc/systemd/system/nirvana.service  (replace YOURUSER)
+[Unit]
+Description=Nirvana daily run (after the 08:00 Manila / 00:00 UTC daily close)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=YOURUSER
+WorkingDirectory=/home/YOURUSER/nirvana
+EnvironmentFile=/home/YOURUSER/nirvana/.env
+# Default: dry run that reports + notifies. Nothing is ever sent.
+ExecStart=/home/YOURUSER/nirvana/.venv/bin/python -m nirvana check
+# After go-live, if you set execution.unattended_risk_reducing: true, swap to this line so
+# wrong-if stops fire even while you sleep (it can only SELL on a stop and CANCEL buys, never buy):
+# ExecStart=/home/YOURUSER/nirvana/.venv/bin/python -m nirvana run --mode live --unattended
+# Optional Claude review right after (about $0.05-0.10 per run on Sonnet):
+ExecStartPost=-/home/YOURUSER/nirvana/.venv/bin/python -m nirvana review

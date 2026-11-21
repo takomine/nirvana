@@ -1,0 +1,10 @@
+# /etc/systemd/system/nirvana-update.timer
+[Unit]
+Description=Check GitHub for Nirvana updates every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target
