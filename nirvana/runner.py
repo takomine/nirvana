@@ -14,7 +14,7 @@ from .brokers import BinanceBroker, BrokerError, PaperBroker
 from .config import Config, Plan
 from .engine import OPEN_STATUSES, Action, Decision, Engine, Result
 from .marketdata import Market
-from .notify import telegram
+from .notify import send
 from .state import State
 from .timeutil import fmt_manila, now_utc
 
@@ -85,6 +85,7 @@ def preflight_live(broker: BinanceBroker, out) -> None:
     for flag in ("enableFutures", "enableMargin", "enableVanillaOptions"):
         if r.get(flag):
             out(f"WARNING: API key has {flag} on. This bot is spot-only; turn it off.")
+    out(f"API key OK: spot trading on, withdrawals off{', IP-restricted' if r.get('ipRestrict') else ''}")
 
 
 # ------------------------------------------------------------------ fills
@@ -388,6 +389,9 @@ def run_once(base: Path, cfg: Config, plan: Plan, mode: str, unattended: bool = 
             "actions": [{**a.__dict__, "price": str(a.price), "qty": str(a.qty)} for a in res.actions],
             "executed": done,
         })
-        if notify and cfg.telegram:
-            telegram(short_summary(res, plan, mode))
+        if notify and cfg.notify:
+            urgent = any(a.kind == "sell" for a in res.actions) or any(
+                d.kind == "ALERT" and ("STOP" in d.msg or "BY HAND" in d.msg or "HOLDING" in d.msg)
+                for d in res.decisions)
+            send(short_summary(res, plan, mode), title=f"Nirvana: {res.regime.label()}", urgent=urgent)
         return res

@@ -34,14 +34,14 @@ A rule-based **Binance spot** bot for your Ubuntu VM. It runs once a day right a
 | 14 | An API key that can withdraw was allowed | Live mode **refuses** to run if the key can withdraw, and warns if it isn't IP-restricted or has futures/margin enabled |
 | 15 | No total-portfolio risk cap | 6% max worst-case loss across all coins, plus deployment caps by regime, a 30% per-coin cap, narratives, memecoins and max coins |
 | 16 | Liquidity tiers were only described | Computed from 7-day volume. Satellite coins get resting limits only; bench coins are blocked |
-| 17 | A failed run went silent | Telegram alert: "run FAILED, stops NOT checked" |
+| 17 | A failed run went silent | Phone alert (ntfy): "run FAILED, stops NOT checked" |
 | 18 | Bot positions mixed with your other coins | The bot tracks only what it bought, so a stop never sells your separate holdings |
 
 ### Fixed after an independent review by Claude Fable 5.2
 - A network timeout while sending an order no longer causes a duplicate order. An unclear send stays tracked and is checked by its order ID on the next run. Only a clear rejection frees the tranche.
 - A buy is **blocked** if the resulting position would be too small to sell at the stop (Binance's minimum order is 5 USDT). Small positions are never quietly dropped; you get a "sell by hand" alert.
 - `check` reads your fills (read-only) when keys are present, so its report and stop checks see real positions.
-- Every kind of failed run sends a Telegram alert.
+- Every kind of failed run sends a phone alert.
 - `buy_rest` respects the 2% per-coin cap. Unused ladder parts expire only after the order is sent.
 - A stop missed on an earlier day (VM down) still fires. Stale candles block trading that coin.
   If BTC data fails, stops are still checked and buys are blocked.
@@ -94,7 +94,14 @@ set -a; . ./.env; set +a
 **3. Binance API key:** API Management → create key → enable **Reading** and **Spot & Margin Trading** only.
 Withdrawals must be off. Restrict the key to your VM's IP. Better still, put the bot's money in a **sub-account**.
 
-**4. Timers (daily run + auto-update):**
+**4. Phone alerts (ntfy):** install the **ntfy** app (Android/iOS), then on the VM:
+```bash
+echo "NTFY_TOPIC=nirvana-$(openssl rand -hex 12)" >> .env && grep NTFY_TOPIC .env
+```
+In the app, tap **+** and subscribe to that exact topic name. Anyone who knows the name can read it, so keep it random.
+Test it: `set -a; . ./.env; set +a; .venv/bin/python -c "from nirvana.notify import send; print(send('hello from Nirvana'))"`
+
+**5. Timers (daily run + auto-update):**
 ```bash
 sed -i "s/YOURUSER/$USER/g" deploy/*.service
 sudo cp deploy/*.service deploy/*.timer /etc/systemd/system/
@@ -113,7 +120,7 @@ and add a branch protection rule on `main` if anyone else ever gets access.
 Changes go to GitHub `main` (from our chats, or your own edits there). Every 10 minutes the VM runs `deploy/update.sh`:
 1. It fetches `main`. If nothing is new, it stops there.
 2. It runs the test suite and loads `config.yaml` and `plan.yaml` from the new version, in a separate folder.
-3. If anything fails, nothing changes and you get a Telegram message. The old version keeps running.
+3. If anything fails, nothing changes and you get a phone alert. The old version keeps running.
 4. If everything passes, it **waits for any bot run in progress to finish** (they share a lock), switches to the new version, and messages you.
 
 Your state (positions, orders), logs, reports and `.env` are never touched. **Don't edit files on the VM**,

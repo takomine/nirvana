@@ -70,7 +70,7 @@ class Config:
     regime: dict
     data: dict
     unattended_risk_reducing: bool
-    telegram: bool
+    notify: bool
     advisor: dict
 
     @property
@@ -125,7 +125,7 @@ def load_config(path: str | Path) -> Config:
             "fx_block_days": float(raw.get("data", {}).get("fx_block_days", 7)),
         },
         unattended_risk_reducing=bool(raw.get("execution", {}).get("unattended_risk_reducing", False)),
-        telegram=bool(raw.get("notify", {}).get("telegram", False)),
+        notify=bool((raw.get("notify") or {}).get("enabled", (raw.get("notify") or {}).get("telegram", True))),
         advisor=raw.get("advisor", {}) or {},
     )
     for k in ("risk_on", "chop", "risk_off"):

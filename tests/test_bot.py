@@ -553,3 +553,21 @@ def test_stop_sell_retries_with_fresh_quote(tmp_path):
     execute(Result(Regime("chop", {}, {}), [], [a]), B(), st, cfg(), plan, tonight_market(), "paper", False,
             NOW.isoformat(), print)
     assert sent == ["nvs-BTC-20261121-0", "nvs-BTC-20261121-0-r1"] and st.qty("BTC") == 0
+
+
+def test_ntfy_notification(monkeypatch):
+    from nirvana import notify
+    calls = []
+    monkeypatch.setenv("NTFY_TOPIC", "nirvana-test-abc")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.setattr(notify.requests, "post", lambda url, **kw: calls.append((url, kw)))
+    assert notify.send("WRONG-IF STOP HYPE", title="Nirvana", urgent=True)
+    url, kw = calls[0]
+    assert url == "https://ntfy.sh/nirvana-test-abc" and kw["headers"]["Priority"] == "high"
+
+
+def test_no_channels_configured_is_silent(monkeypatch):
+    from nirvana import notify
+    for k in ("NTFY_TOPIC", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+        monkeypatch.delenv(k, raising=False)
+    assert notify.send("x") is False

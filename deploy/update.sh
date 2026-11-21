@@ -11,11 +11,17 @@ BRANCH="${BRANCH:-main}"
 cd "$APP"
 mkdir -p logs state
 
-# only the Telegram settings are read from .env; trading keys never enter this script
-TG_TOKEN=$(grep -E '^TELEGRAM_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2- || true)
-TG_CHAT=$(grep -E '^TELEGRAM_CHAT_ID=' .env 2>/dev/null | cut -d= -f2- || true)
+# only notification settings are read from .env; trading keys never enter this script
+envval() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- || true; }
+TG_TOKEN=$(envval TELEGRAM_BOT_TOKEN); TG_CHAT=$(envval TELEGRAM_CHAT_ID)
+NTFY_TOPIC=$(envval NTFY_TOPIC); NTFY_URL=$(envval NTFY_URL); NTFY_URL=${NTFY_URL:-https://ntfy.sh}
+NTFY_TOKEN=$(envval NTFY_TOKEN)
 notify() {
   echo "$1"
+  if [ -n "$NTFY_TOPIC" ]; then
+    curl -s -m 15 -H "Title: Nirvana update" ${NTFY_TOKEN:+-H "Authorization: Bearer $NTFY_TOKEN"} \
+      -d "$1" "${NTFY_URL%/}/$NTFY_TOPIC" >/dev/null || true
+  fi
   if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
     curl -s -m 15 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
       --data-urlencode "chat_id=${TG_CHAT}" --data-urlencode "text=Nirvana: $1" >/dev/null || true

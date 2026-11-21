@@ -27,10 +27,10 @@ def cmd_run(args) -> int:
         run_once(base, cfg, plan, mode, unattended=getattr(args, "unattended", False), notify=not args.quiet,
                  lock=False)
     except Exception as e:  # noqa: BLE001 - any failure must reach the phone
-        if cfg.telegram and not args.quiet:  # a silent cron failure would mean stops go unchecked
-            from .notify import telegram
-            telegram(f"Nirvana run FAILED ({mode}): {e.__class__.__name__}: {e}\n"
-                     "Stops may NOT have been checked. Look at your positions.")
+        if cfg.notify and not args.quiet:  # a silent cron failure would mean stops go unchecked
+            from .notify import send
+            send(f"{e.__class__.__name__}: {e}\nStops may NOT have been checked. Look at your positions.",
+                 title=f"Nirvana run FAILED ({mode})", urgent=True)
         raise
     return 0
 
@@ -122,9 +122,9 @@ def cmd_review(args) -> int:
         return 1
     print(report)
     print(f"\n(saved {meta['path']})")
-    if cfg.telegram and not args.quiet:
-        from .notify import telegram
-        telegram(report)
+    if cfg.notify and not args.quiet:
+        from .notify import send
+        send(report[:3800], title="Nirvana: Claude review")
     return 0
 
 
@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dir", default=".", help="bot folder (config.yaml, plan.yaml, state/, logs/)")
     p.add_argument("--config")
     p.add_argument("--plan")
-    p.add_argument("--quiet", action="store_true", help="no Telegram message")
+    p.add_argument("--quiet", action="store_true", help="no phone notification")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("check", help="dry run: validate the plan against live data, send nothing").set_defaults(fn=cmd_run)
