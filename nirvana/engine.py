@@ -15,7 +15,7 @@ from .marketdata import DataError, SymbolInfo
 from .regime import Regime, compute_regime
 from .risk import size_for_risk, stop_width, worst_loss_for_buy, worst_loss_for_position
 from .state import State
-from .timeutil import age_hours, manila_date
+from .timeutil import age_hours, manila_date, parse_dt
 
 OPEN_STATUSES = ("NEW", "PARTIALLY_FILLED")
 IOC_PAD = 1.003  # marketable buys: IOC limit at most 0.3% over the ask (never above max_price)
@@ -45,6 +45,7 @@ class Action:
     risk: float = 0.0
     risk_reducing: bool = False
     human_only: bool = False   # never executed unattended, even if risk-reducing
+    expire_keys: list = field(default_factory=list)  # tranche keys to expire once this buy is sent
 
     def describe(self) -> str:
         if self.kind == "cancel":
@@ -128,6 +129,9 @@ class Engine:
                 cd.close = cd.candles[-1].close
                 cd.atr = atr_pct(cd.candles, 14)
                 cd.avg_qv = avg_quote_volume(cd.candles, 7)
+            if cd.candles and (self.now - cd.candles[-1].close_time).total_seconds() > 26 * 3600:
+                raise DataError(f"latest closed candle is from {cd.candles[-1].open_time.date()}: data is stale "
+                                "(halted/delisted symbol or lagging data source)")
             cd.info = self.market.info(coin)
             cd.bid, cd.ask = self.market.book(coin)
         except (DataError, Exception) as e:  # noqa: BLE001 - any data failure blocks buys for the coin
@@ -145,10 +149,14 @@ class Engine:
     # ------------------------------------------------------------ main
     def run(self) -> Result:
         btc = self.load_coin("BTC")
-        if btc.error or not btc.candles:
-            raise DataError(f"BTC data unavailable, cannot compute regime: {btc.error}")
-        regime = compute_regime(btc.candles, self.market.fear_greed(), self.plan.etf_outflows,
-                                self.plan.etf_outflows_updated, self.cfg.regime, self.now)
+        btc_failed = bool(btc.error or not btc.candles)
+        if btc_failed:
+            regime = Regime("risk_off", {"btc_below_sma200": None, "extreme_fear": None, "etf_outflows": None},
+                            {"btc_close": None, "sma50": None, "sma200": None, "fng": None, "btc_close_date": None},
+                            [f"BTC data unavailable ({btc.error}): regime unknown, treated as risk-off"], True)
+        else:
+            regime = compute_regime(btc.candles, self.market.fear_greed(), self.plan.etf_outflows,
+                                    self.plan.etf_outflows_updated, self.cfg.regime, self.now)
         self.regime = regime
         for n in regime.notes:
             self.d("WARN", "REGIME", n)
@@ -163,6 +171,8 @@ class Engine:
 
         # global buy blockers
         self.global_block: list[str] = []
+        if btc_failed:
+            self.global_block.append("BTC data unavailable (stops still checked)")
         fx_age_d = age_hours(self.plan.php_per_usdt_updated, self.now) / 24
         if fx_age_d > self.cfg.data["fx_block_days"]:
             self.global_block.append(f"php_per_usdt is {fx_age_d:.0f} days old: update plan.yaml")
@@ -253,6 +263,8 @@ class Engine:
             return
         if cp and cp.wrong_if is not None and w is not None and cp.wrong_if < w:
             self.d("BLOCK", coin, f"plan lowers wrong-if {w} -> {cp.wrong_if}: not allowed while holding; keeping {w}")
+        if w is not None:  # remember the highest level ever used while holding: it can only go up
+            self.state.data["wrong_if_floor"][coin] = w
         if w is None:
             self.d("ALERT", coin, "holding a position with NO wrong-if: add one to plan.yaml")
             return
@@ -260,8 +272,17 @@ class Engine:
         gain = (pos["qty"] * mark) / pos["cost_usdt"] - 1 if pos["cost_usdt"] > 0 else 0.0
         last_day = cd.candles[-1].open_time.date().isoformat()
 
-        if mark < w:
-            self.stop_out(coin, cd, f"daily close {mark:g} ({last_day} UTC) < wrong-if {w:g}")
+        since = pos.get("stop_checked_through") or pos.get("opened")
+        since_dt = parse_dt(since) if since else None
+        unseen = [c for c in cd.candles if since_dt is None or c.close_time > since_dt]
+        if cd.candles[-1] not in unseen:   # always judge the latest close too (e.g. a raised wrong-if)
+            unseen.append(cd.candles[-1])
+        breach = next((c for c in unseen if c.close < w), None)
+        pos["stop_checked_through"] = cd.candles[-1].close_time.isoformat()
+        if breach is not None:
+            missed = "" if breach is cd.candles[-1] else " (missed on an earlier day: acting now)"
+            self.stop_out(coin, cd, f"daily close {breach.close:g} ({breach.open_time.date()} UTC) "
+                                    f"< wrong-if {w:g}{missed}")
             return
         if cp and cp.exit_now:
             self.sell_all(coin, cd, f"exit_now: {cp.exit_reason}", prefix="nvx", human_only=True)
@@ -295,9 +316,15 @@ class Engine:
         q = cd.info.round_qty_down(qty)
         notional = float(q * price)
         if q <= 0 or Decimal(str(notional)) < cd.info.min_notional:
-            self.d("ALERT", coin, f"{why}; remaining {qty:.8g} is dust below the exchange minimum: closing the record")
-            self.actions.append(Action("sell", coin, self.market.symbol(coin), "dust", why, side="SELL",
-                                       qty=Decimal(0), price=price, risk_reducing=True))
+            value = qty * cd.bid
+            if value < 1.0:
+                self.d("ALERT", coin, f"{why}; remaining {qty:.8g} (~{value:.2f} USDT) is dust: closing the record")
+                self.actions.append(Action("sell", coin, self.market.symbol(coin), "dust", why, side="SELL",
+                                           qty=Decimal(0), price=price, risk_reducing=True))
+            else:
+                self.d("ALERT", coin, f"{why}. Position ~{value:.2f} USDT is below the exchange minimum order "
+                                      f"({cd.info.min_notional}), so the bot CAN'T sell it: SELL BY HAND (e.g. Convert), "
+                                      "then `record-sell`")
             return
         n = sum(1 for k in self.state.data["orders"] if k.startswith(f"{prefix}-{coin}-{self.today:%Y%m%d}"))
         cid = f"{prefix}-{coin}-{self.today:%Y%m%d}-{n}"
@@ -308,6 +335,20 @@ class Engine:
 
     # ------------------------------------------------------------ B) open orders
     def revalidate_open_orders(self) -> None:
+        self.revalidate_each_open_order()
+        port = self.portfolio_now()
+        cap = self.r["max_deployed"][self.regime.name] * self.budget
+        over = port["deployed"] - cap
+        if over > 1e-9:  # e.g. regime flipped to risk-off: trim resting buys, newest first
+            for cid, o in sorted(self.open_orders(side="BUY"), key=lambda x: x[1].get("created", ""), reverse=True):
+                if over <= 0 or any(a.kind == "cancel" and a.client_id == cid for a in self.actions):
+                    continue
+                self.actions.append(Action("cancel", o["coin"], self.market.symbol(o["coin"]), cid,
+                                           f"deployment over the {self.regime.label()} cap", risk_reducing=True))
+                self.d("ACTION", o["coin"], f"cancel resting buy {cid}: deployment over the {self.regime.label()} cap")
+                over -= self.order_remaining_notional(o)
+
+    def revalidate_each_open_order(self) -> None:
         for cid, o in self.open_orders(side="BUY"):
             coin = o["coin"]
             reason = self.open_order_problem(cid, o)
@@ -430,6 +471,8 @@ class Engine:
             block = f"7d avg volume ${cd.avg_qv / 1e6:.1f}M < ${self.cfg.liquidity['satellite_min'] / 1e6:.0f}M: bench only"
         elif self.is_stopped(coin):
             block = "stopped out under this plan: write a new plan (new plan_id) to re-enter"
+        elif cp.exit_now:
+            block = f"exit_now is set ({cp.exit_reason})"
         elif cp.meme and self.mode == "live" and not cp.paper_tested:
             block = "memecoin: paper-trade first (set paper_tested: true)"
         elif w is None:
@@ -456,10 +499,10 @@ class Engine:
                 t0 = rest[0][0]
                 synth = Tranche(id=f"{t0.id}", type="marketable", max_price=cp.deadline_max_price, price=None,
                                 php=None, usdt=total, when=None)
-                for t, _ in rest[1:]:
-                    self.state.tranche(self.plan.plan_id, t.id)["status"] = "expired"
                 self.d("INFO", coin, f"fill_by {self.deadline(cp)} passed: buying the rest ({total:.2f} USDT)")
-                self.try_buy(cp, cd, synth, w, total)
+                ok = self.coin_caps_ok(cp, w, [(synth, total)])
+                self.try_buy(cp, cd, synth, w, total, diagnose=not ok,
+                             expire_keys=[f"{self.plan.plan_id}:{t.id}" for t, _ in rest[1:]])
             else:
                 for t, _ in rest:
                     self.state.tranche(self.plan.plan_id, t.id)["status"] = "expired"
@@ -474,29 +517,9 @@ class Engine:
             return
 
         # plan-level per-coin caps (all remaining tranches + holdings + open orders)
-        port = self.portfolio_now()
         planned = [(t, self.tranche_remaining(cp, t)) for t in cp.tranches]
         planned = [(t, r) for t, r in planned if r > 0 and not self.has_open_order(f"{self.plan.plan_id}:{t.id}")]
-        planned_risk = sum(worst_loss_for_buy(r, t.entry_price, w, self.r["gap"], self.cfg.fee) for t, r in planned)
-        planned_dep = sum(r for _, r in planned)
-        coin_risk = port["per_coin_risk"].get(coin, 0) + planned_risk
-        cap_risk = self.r["max_risk_per_coin"] * self.budget
-        coin_dep = port["per_coin_dep"].get(coin, 0) + planned_dep
-        cap_dep = min(self.r["max_coin"], cp.max_pct or 1.0) * self.budget
-        self.d("INFO", coin, f"plan worst case {self.php(coin_risk)} vs cap {self.php(cap_risk)} "
-                             f"({coin_risk / self.budget:.2%} of budget, incl. {self.r['gap']:.0%} gap + fees); "
-                             f"exposure {self.php(coin_dep)} vs cap {self.php(cap_dep)}")
-        diagnose = False
-        if coin_risk > cap_risk + 1e-9:
-            scale = (cap_risk - port["per_coin_risk"].get(coin, 0)) / planned_risk if planned_risk else 0
-            self.d("BLOCK", coin, f"plan risk {self.php(coin_risk)} exceeds the {self.r['max_risk_per_coin']:.0%} cap "
-                                  f"{self.php(cap_risk)}: shrink remaining tranches to ~{max(scale, 0):.0%} of size. "
-                                  "No buys for this coin; per-tranche checks below are for information")
-            diagnose = True
-        if coin_dep > cap_dep + 1e-9:
-            self.d("BLOCK", coin, f"plan exposure {self.php(coin_dep)} exceeds the per-coin cap {self.php(cap_dep)}. "
-                                  "No buys for this coin")
-            diagnose = True
+        diagnose = not self.coin_caps_ok(cp, w, planned)
 
         for t in cp.tranches:
             st = self.state.tranche(self.plan.plan_id, t.id)
@@ -519,8 +542,34 @@ class Engine:
                 self.d("INFO", coin, f"condition met: {why}", t.id)
             self.try_buy(cp, cd, t, w, rem, diagnose=diagnose)
 
+    def coin_caps_ok(self, cp: CoinPlan, w: float, planned: list) -> bool:
+        """Per-coin worst-case risk and exposure, counting holdings + open orders + every planned tranche."""
+        coin = cp.coin
+        port = self.portfolio_now()
+        planned_risk = sum(worst_loss_for_buy(r, t.entry_price, w, self.r["gap"], self.cfg.fee) for t, r in planned)
+        planned_dep = sum(r for _, r in planned)
+        coin_risk = port["per_coin_risk"].get(coin, 0) + planned_risk
+        cap_risk = self.r["max_risk_per_coin"] * self.budget
+        coin_dep = port["per_coin_dep"].get(coin, 0) + planned_dep
+        cap_dep = min(self.r["max_coin"], cp.max_pct or 1.0) * self.budget
+        self.d("INFO", coin, f"plan worst case {self.php(coin_risk)} vs cap {self.php(cap_risk)} "
+                             f"({coin_risk / self.budget:.2%} of budget, incl. {self.r['gap']:.0%} gap + fees); "
+                             f"exposure {self.php(coin_dep)} vs cap {self.php(cap_dep)}")
+        ok = True
+        if coin_risk > cap_risk + 1e-9:
+            scale = (cap_risk - port["per_coin_risk"].get(coin, 0)) / planned_risk if planned_risk else 0
+            self.d("BLOCK", coin, f"plan risk {self.php(coin_risk)} exceeds the {self.r['max_risk_per_coin']:.0%} cap "
+                                  f"{self.php(cap_risk)}: shrink remaining tranches to ~{max(scale, 0):.0%} of size. "
+                                  "No buys for this coin; per-tranche checks below are for information")
+            ok = False
+        if coin_dep > cap_dep + 1e-9:
+            self.d("BLOCK", coin, f"plan exposure {self.php(coin_dep)} exceeds the per-coin cap {self.php(cap_dep)}. "
+                                  "No buys for this coin")
+            ok = False
+        return ok
+
     def try_buy(self, cp: CoinPlan, cd: CoinData, t: Tranche, w: float, notional: float,
-                diagnose: bool = False) -> None:
+                diagnose: bool = False, expire_keys: list | None = None) -> None:
         coin, info = cp.coin, cd.info
         key = f"{self.plan.plan_id}:{t.id}"
         ask = cd.ask
@@ -601,13 +650,23 @@ class Engine:
             self.d("SKIP", coin, f"order {float(q * p):.2f} {self.cfg.quote} is below the exchange minimum "
                                  f"({info.min_notional})", t.id)
             return
+        held = self.state.qty(coin) + sum(float(o["orig_qty"]) - float(o.get("executed_qty", 0))
+                                          for _, o in self.open_orders(coin=coin, side="BUY"))
+        held += sum(float(a.qty) for a in self.actions if a.kind == "buy" and a.coin == coin)
+        exit_value = (held + float(q)) * w * (1 - self.r["gap"]) * (1 - self.r["stop_sell_slippage"])
+        if exit_value < 1.2 * float(info.min_notional):
+            self.d("BLOCK", coin, f"position would be too small to stop-sell at the wrong-if (~{exit_value:.2f} "
+                                  f"{self.cfg.quote} < 1.2x exchange minimum {info.min_notional}): make this tranche bigger "
+                                  f"(>= ~{self.php(1.2 * float(info.min_notional) / (w * (1 - self.r['gap']) * (1 - self.r['stop_sell_slippage'])) * float(p))})", t.id)
+            return
         st = self.state.tranche(self.plan.plan_id, t.id)
         cid = f"nv{plan_hash(self.plan.plan_id)}-{t.id}-{st.get('attempts', 0)}"
         tif = "IOC" if marketable else "GTC"
         reason = (f"{'marketable' if marketable else 'resting limit'} tranche; stop room {sw:.1%} "
                   f"({sw / cd.atr:.1f}x ATR); worst case {self.php(risk)}")
         self.actions.append(Action("buy", coin, self.market.symbol(coin), cid, reason, side="BUY", tif=tif,
-                                   price=p, qty=q, tranche_key=key, notional=float(q * p), risk=risk))
+                                   price=p, qty=q, tranche_key=key, notional=float(q * p), risk=risk,
+                                   expire_keys=list(expire_keys or [])))
         self.d("ACTION", coin, f"BUY {q} @ {p} {tif} (~{float(q * p):.2f} USDT / {self.php(float(q * p))}) - {reason}", t.id)
 
     # ------------------------------------------------------------ watch coins

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import ConfigError, load_config, load_plan
 from .marketdata import DataError, Market
-from .runner import RunError, run_once, state_file
+from .runner import RunError, run_lock, run_once, state_file
 from .state import State
 from .timeutil import now_utc
 
@@ -24,11 +24,13 @@ def cmd_run(args) -> int:
     base, cfg, plan = _load(args)
     mode = "dry" if args.cmd == "check" else args.mode
     try:
-        run_once(base, cfg, plan, mode, unattended=getattr(args, "unattended", False), notify=not args.quiet)
-    except (DataError, RunError) as e:
+        run_once(base, cfg, plan, mode, unattended=getattr(args, "unattended", False), notify=not args.quiet,
+                 lock=False)
+    except Exception as e:  # noqa: BLE001 - any failure must reach the phone
         if cfg.telegram and not args.quiet:  # a silent cron failure would mean stops go unchecked
             from .notify import telegram
-            telegram(f"Nirvana run FAILED ({mode}): {e}\nStops were NOT checked. Look at your positions.")
+            telegram(f"Nirvana run FAILED ({mode}): {e.__class__.__name__}: {e}\n"
+                     "Stops may NOT have been checked. Look at your positions.")
         raise
     return 0
 
@@ -68,7 +70,11 @@ def cmd_record_fill(args) -> int:
     cost = args.qty * args.price
     net = args.qty * (1 - cfg.fee) if args.fee_in_coin else args.qty
     floor = st.data["wrong_if_floor"].get(coin)
-    w = max(x for x in (cp.wrong_if, floor) if x is not None)
+    levels = [x for x in (cp.wrong_if, floor) if x is not None]
+    if not levels:
+        print(f"{coin} has no wrong-if in the plan: add one before recording fills")
+        return 2
+    w = max(levels)
     now_s = now_utc().isoformat()
     st.apply_buy(coin, net, cost, now_s, w)
     tr = st.tranche(plan.plan_id, t.id)
@@ -173,9 +179,16 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+STATEFUL = {"check", "run", "record-fill", "record-sell"}
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.cmd in STATEFUL:
+            # lock BEFORE reading config/plan, so the auto-updater can't swap files mid-run
+            with run_lock(Path(args.dir).resolve() / "state" / ".lock"):
+                return args.fn(args)
         return args.fn(args)
     except (ConfigError, RunError, DataError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

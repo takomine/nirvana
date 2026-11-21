@@ -20,6 +20,25 @@ COIN_RE = re.compile(r"^[A-Z0-9]{2,12}$")
 TRANCHE_TYPES = ("limit", "marketable", "conditional")
 
 
+PLAN_KEYS = {"plan_id", "created", "valid_until", "manual_inputs", "blackouts", "coins"}
+MANUAL_KEYS = {"etf_outflows", "etf_outflows_updated", "php_per_usdt", "php_per_usdt_updated"}
+BLACKOUT_KEYS = {"name", "coins", "start", "end"}
+COIN_KEYS = {"status", "narrative", "wrong_if", "tranches", "fill_by", "on_deadline", "deadline_max_price",
+             "take_profit_levels", "alert_below", "alert_above", "max_pct", "meme", "paper_tested",
+             "exit_now", "exit_reason", "notes"}
+TRANCHE_KEYS = {"id", "type", "price", "max_price", "php", "usdt", "when", "allow_in_risk_off",
+                "override_reason", "notes"}
+
+
+def _known(d, allowed: set, where: str) -> None:
+    """Typos like `wrongif:` must fail loudly instead of being silently ignored."""
+    if not isinstance(d, dict):
+        raise ConfigError(f"{where}: expected a mapping, got {type(d).__name__}")
+    extra = set(d) - allowed
+    if extra:
+        raise ConfigError(f"{where}: unknown key(s) {sorted(extra)}; allowed: {sorted(allowed)}")
+
+
 def _req(d: dict, key: str, where: str):
     if key not in d or d[key] is None:
         raise ConfigError(f"{where}: missing '{key}'")
@@ -213,6 +232,8 @@ def _parse_condition(when, where: str) -> dict:
 
 def load_plan(path: str | Path) -> Plan:
     raw = yaml.safe_load(Path(path).read_text()) or {}
+    _known(raw, PLAN_KEYS, "plan")
+    _known(raw.get("manual_inputs") or {}, MANUAL_KEYS, "manual_inputs")
     pid = str(_req(raw, "plan_id", "plan"))
     if not re.match(r"^[A-Za-z0-9._-]{1,40}$", pid):
         raise ConfigError("plan_id: letters, digits, . _ - only (max 40)")
@@ -234,7 +255,10 @@ def load_plan(path: str | Path) -> Plan:
 
     for i, b in enumerate(raw.get("blackouts") or []):
         where = f"blackouts[{i}]"
+        _known(b, BLACKOUT_KEYS, where)
         coins = b.get("coins", "all")
+        if coins != "all" and not (isinstance(coins, list) and coins):
+            raise ConfigError(f"{where}.coins must be `all` or a list like [HYPE]")
         bo = Blackout(
             name=str(b.get("name", where)),
             coins=None if coins == "all" else [str(c).upper() for c in coins],
@@ -252,6 +276,7 @@ def load_plan(path: str | Path) -> Plan:
         if not COIN_RE.match(coin):
             raise ConfigError(f"{where}: bad coin symbol")
         c = c or {}
+        _known(c, COIN_KEYS, where)
         status = c.get("status", "watch")
         if status not in ("active", "watch", "off"):
             raise ConfigError(f"{where}.status must be active | watch | off")
@@ -260,6 +285,7 @@ def load_plan(path: str | Path) -> Plan:
         tranches = []
         for j, t in enumerate(c.get("tranches") or []):
             tw = f"{where}.tranches[{j}]"
+            _known(t, TRANCHE_KEYS, tw)
             tid = str(_req(t, "id", tw))
             if not ID_RE.match(tid):
                 raise ConfigError(f"{tw}.id: 1-16 chars of A-Z a-z 0-9 _ -")

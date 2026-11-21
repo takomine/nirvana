@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import fcntl
 import json
+from decimal import Decimal
 import os
 import sys
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from .brokers import BinanceBroker, BrokerError, PaperBroker
@@ -29,7 +30,7 @@ def run_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "w")
     import time as _t
-    for _ in range(120):  # wait up to ~2 min (e.g. while the auto-updater swaps code)
+    for _ in range(600):  # wait up to 10 min (an update swapping code, or you answering YES prompts)
         try:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             break
@@ -37,7 +38,7 @@ def run_lock(path: Path):
             _t.sleep(1)
     else:
         f.close()
-        raise RunError("another run or an update is in progress (lock held for 2 min)")
+        raise RunError("another run or an update is in progress (lock held for 10 min)")
     try:
         yield
     finally:
@@ -55,9 +56,14 @@ def state_file(base: Path, mode: str, cfg: Config) -> Path:
 def make_broker(mode: str, cfg: Config, state: State, market: Market, now):
     if mode == "paper":
         return PaperBroker(state, market, cfg.fee, cfg.fee_in_base, now)
-    if mode == "live" and not cfg.is_manual:
-        return BinanceBroker(os.environ.get("BINANCE_API_KEY", ""), os.environ.get("BINANCE_API_SECRET", ""),
-                             testnet=cfg.venue == "binance_testnet")
+    if cfg.is_manual:
+        return None
+    key, secret = os.environ.get("BINANCE_API_KEY", ""), os.environ.get("BINANCE_API_SECRET", "")
+    if mode == "live":
+        return BinanceBroker(key, secret, testnet=cfg.venue == "binance_testnet")
+    if mode == "dry" and key and secret:
+        # read-only: sync fills into an in-memory copy of state so the report (and stop checks) see them
+        return BinanceBroker(key, secret, testnet=cfg.venue == "binance_testnet")
     return None
 
 
@@ -66,8 +72,12 @@ def preflight_live(broker: BinanceBroker, out) -> None:
     if r is None:
         out("testnet: skipping API key permission check")
         return
-    if r.get("enableWithdrawals"):
-        raise RunError("REFUSING TO RUN: this API key can WITHDRAW. Disable withdrawals on the key.")
+    if not isinstance(r, dict) or r.get("enableWithdrawals") is not False:
+        raise RunError("REFUSING TO RUN: this API key can WITHDRAW (or Binance didn't say it can't). "
+                       "Disable withdrawals on the key.")
+    for flag in ("enableInternalTransfer", "permitsUniversalTransfer"):
+        if r.get(flag):
+            raise RunError(f"REFUSING TO RUN: API key has {flag} on (funds could be moved). Turn it off.")
     if not r.get("enableSpotAndMarginTrading"):
         raise RunError("API key has no spot trading permission")
     if not r.get("ipRestrict"):
@@ -86,9 +96,14 @@ def apply_order_update(state: State, cfg: Config, rec: dict, fresh: dict | None,
     new_q, new_quote = float(fresh.get("executed_qty") or 0), float(fresh.get("quote_qty") or 0)
     dq, dquote = new_q - prev_q, new_quote - prev_quote
     coin = rec["coin"]
+    comm = fresh.get("commissions")  # only present on the placement response (fills)
+    exact = comm is not None and prev_q == 0
     if dq > 1e-15:
         if rec["side"] == "BUY":
-            net = dq * (1 - cfg.fee) if cfg.fee_in_base else dq
+            if exact:
+                net = dq - comm.get(coin, 0.0)
+            else:
+                net = dq * (1 - cfg.fee) if cfg.fee_in_base else dq
             state.apply_buy(coin, net, dquote, now_s, rec.get("wrong_if"))
             if rec.get("tranche_key"):
                 t = state.data["tranches"].setdefault(rec["tranche_key"], {"status": "pending", "filled_qty": 0.0,
@@ -97,7 +112,7 @@ def apply_order_update(state: State, cfg: Config, rec: dict, fresh: dict | None,
                 t["filled_cost"] = t.get("filled_cost", 0.0) + dquote
             out(f"FILL  BUY  {coin} {dq:.8g} for {dquote:.2f} USDT ({rec['client_id']})")
         else:
-            proceeds = dquote * (1 - cfg.fee)
+            proceeds = dquote - comm.get(cfg.quote, 0.0) if exact else dquote * (1 - cfg.fee)
             pnl = state.apply_sell(coin, dq, proceeds)
             out(f"FILL  SELL {coin} {dq:.8g} for {proceeds:.2f} USDT, realized {pnl:+.2f} USDT ({rec['client_id']})")
     rec["executed_qty"], rec["quote_qty"] = str(new_q), str(new_quote)
@@ -119,8 +134,11 @@ def sync(state: State, cfg: Config, broker, market: Market, now_s: str, out) -> 
             alerts.append(f"could not refresh order {cid}: {e}")
             continue
         if fresh is None:
-            alerts.append(f"order {cid} not found on the exchange; marking it closed")
+            alerts.append(f"order {cid} never reached the exchange; marking it closed")
             rec["status"] = "CANCELED"
+            t = state.data["tranches"].get(rec.get("tranche_key") or "")
+            if t and t.get("status") == "open":
+                t["status"] = "pending"
             continue
         apply_order_update(state, cfg, rec, fresh, now_s, out)
 
@@ -132,7 +150,10 @@ def sync(state: State, cfg: Config, broker, market: Market, now_s: str, out) -> 
             return alerts
         for coin, pos in list(state.positions.items()):
             have = bal.get(coin, 0.0)
-            if have < pos["qty"] * 0.999:
+            if pos["qty"] * 0.995 <= have < pos["qty"]:   # fee/rounding drift: follow the exchange quietly
+                pos["cost_usdt"] *= have / pos["qty"]
+                pos["qty"] = have
+            elif have < pos["qty"] * 0.995:
                 alerts.append(f"{coin}: exchange balance {have:.8g} < tracked {pos['qty']:.8g} "
                               "(sold or moved outside the bot?) - tracking the lower amount")
                 if have <= 0:
@@ -150,8 +171,9 @@ def format_report(res: Result, plan: Plan, mode: str, venue: str, now) -> str:
     v = rg.values
     lines = [f"Nirvana | {fmt_manila(now)} | mode={mode} venue={venue} | plan {plan.plan_id}"]
     sig = ", ".join(f"{k}={'?' if x is None else x}" for k, x in rg.signals.items())
-    lines.append(f"Regime: {rg.label()} | {sig} | BTC close {v['btc_close']:g} ({v['btc_close_date']} UTC), "
-                 f"SMA50 {v['sma50'] or 0:.0f}, SMA200 {v['sma200'] or 0:.0f}, F&G {v['fng']}")
+    num = lambda x, f: "?" if x is None else format(x, f)  # noqa: E731
+    lines.append(f"Regime: {rg.label()} | {sig} | BTC close {num(v['btc_close'], 'g')} ({v['btc_close_date']} UTC), "
+                 f"SMA50 {num(v['sma50'], '.0f')}, SMA200 {num(v['sma200'], '.0f')}, F&G {v['fng']}")
     s = res.summary
     lines.append(f"Budget {s['budget_usdt']:.2f} USDT | deployed {s['deployed_pct']:.1%} "
                  f"(cap {s['max_deployed_pct']:.0%}) | worst-case risk {s['risk_pct']:.2%}")
@@ -240,35 +262,79 @@ def execute(res: Result, broker, state: State, cfg: Config, plan: Plan, market: 
             continue
 
         kind = "stop" if a.client_id.startswith("nvs-") else "exit" if a.client_id.startswith("nvx-") else "buy"
-        rec = {"client_id": a.client_id, "coin": a.coin, "side": a.side, "kind": kind, "tif": a.tif,
-               "price": str(a.price), "orig_qty": str(a.qty), "executed_qty": "0", "quote_qty": "0",
-               "status": "NEW", "plan_id": plan.plan_id, "tranche_key": a.tranche_key,
-               "tranche_id": a.tranche_key.split(":", 1)[1] if a.tranche_key else None,
-               "wrong_if": None, "created": now_s}
         if kind == "buy":
             cp = plan.coins.get(a.coin)
             floor = state.data["wrong_if_floor"].get(a.coin)
-            rec["wrong_if"] = max(x for x in (cp.wrong_if if cp else None, floor) if x is not None)
+            levels = [x for x in (cp.wrong_if if cp else None, floor) if x is not None]
             t = state.tranche(plan.plan_id, a.tranche_key.split(":", 1)[1])
             t["attempts"] = t.get("attempts", 0) + 1
             t["status"] = "open"
-        else:
-            state.data["stopped"][a.coin] = {"plan_id": plan.plan_id, "at": now_s, "why": a.reason}
-        state.data["orders"][a.client_id] = rec
-        state.save()  # record intent BEFORE sending, so a crash can't lose track of a live order
+            status = _send(a, a.client_id, a.qty, a.price, broker, state, cfg, plan, now_s, out, done,
+                           wrong_if=max(levels) if levels else None)
+            if status not in ("REJECTED",):
+                for k in a.expire_keys:           # buy_rest: siblings expire only once the order is out
+                    state.data["tranches"].setdefault(k, {"status": "pending", "filled_qty": 0.0,
+                                                          "filled_cost": 0.0, "attempts": 0})["status"] = "expired"
+            state.save()
+            continue
+
+        # sells: never more than the exchange says we actually have
+        state.data["stopped"][a.coin] = {"plan_id": plan.plan_id, "at": now_s, "why": a.reason}
+        info = market.info(a.coin)
+        qty = a.qty
         try:
-            fresh = broker.place_limit(a.symbol, a.side, a.qty, a.price, a.tif, a.client_id)
-            apply_order_update(state, cfg, rec, fresh, now_s, out)
-            out(f"sent {a.client_id}: status {rec['status']}")
-            done.append({"action": a.kind, "client_id": a.client_id, "status": rec["status"]})
+            free = broker.free(a.coin)
+            if info is not None and Decimal(str(free)) < qty:
+                qty = info.round_qty_down(free)
         except BrokerError as e:
-            rec["status"] = "REJECTED"
-            if a.tranche_key:
-                state.data["tranches"][a.tranche_key]["status"] = "pending"
-            out(f"ERROR sending {a.client_id}: {e}")
-            done.append({"action": a.kind, "client_id": a.client_id, "error": str(e)})
+            out(f"could not read free {a.coin} balance ({e}); using tracked qty")
+        cid, price = a.client_id, a.price
+        for attempt in range(3):                  # stop sells re-quote and retry within this run
+            status = _send(a, cid, qty, price, broker, state, cfg, plan, now_s, out, done)
+            rec = state.data["orders"][cid]
+            remaining = qty - Decimal(rec.get("executed_qty", "0"))
+            if status != "EXPIRED" or info is None or remaining <= 0:
+                break
+            bid, _ = market.book(a.coin)
+            price = info.round_price_down(bid * (1 - cfg.risk["stop_sell_slippage"]))
+            qty = info.round_qty_down(float(remaining))
+            if qty * price < info.min_notional:
+                out(f"{a.coin}: remaining {qty} is below the exchange minimum; sell it by hand")
+                break
+            cid = f"{a.client_id}-r{attempt + 1}"
+            out(f"stop sell not fully filled; retrying {qty} @ {price}")
         state.save()
     return done
+
+
+def _send(a: Action, cid: str, qty, price, broker, state: State, cfg: Config, plan: Plan, now_s: str, out,
+          done: list, wrong_if=None) -> str:
+    """Record the order BEFORE sending, then send. Ambiguous failures keep it open for the next sync."""
+    kind = "buy" if a.side == "BUY" else ("stop" if cid.startswith("nvs-") else "exit")
+    rec = {"client_id": cid, "coin": a.coin, "side": a.side, "kind": kind, "tif": a.tif,
+           "price": str(price), "orig_qty": str(qty), "executed_qty": "0", "quote_qty": "0",
+           "status": "NEW", "plan_id": plan.plan_id, "tranche_key": a.tranche_key,
+           "tranche_id": a.tranche_key.split(":", 1)[1] if a.tranche_key else None,
+           "wrong_if": wrong_if, "created": now_s}
+    state.data["orders"][cid] = rec
+    state.save()  # a crash after this line can't lose track of a live order
+    try:
+        fresh = broker.place_limit(a.symbol, a.side, qty, price, a.tif, cid)
+        apply_order_update(state, cfg, rec, fresh, now_s, out)
+        out(f"sent {cid}: status {rec['status']}")
+        done.append({"action": a.kind, "client_id": cid, "status": rec["status"]})
+    except BrokerError as e:
+        if e.definite:
+            rec["status"] = "REJECTED"
+            if a.tranche_key and a.tranche_key in state.data["tranches"]:
+                state.data["tranches"][a.tranche_key]["status"] = "pending"
+            out(f"REJECTED {cid}: {e}")
+        else:
+            # timeout / 5xx: the order may exist. Keep it NEW; the next run's sync asks Binance by client id.
+            out(f"UNCERTAIN {cid}: {e}. Will check its status on the next run; NOT resending.")
+        done.append({"action": a.kind, "client_id": cid, "error": str(e), "definite": e.definite})
+    state.save()
+    return rec["status"]
 
 
 # ------------------------------------------------------------------ journal
@@ -282,13 +348,13 @@ def journal(base: Path, entry: dict) -> None:
 
 def run_once(base: Path, cfg: Config, plan: Plan, mode: str, unattended: bool = False,
              market: Market | None = None, out=print, confirm=confirm_tty, now=None,
-             paper_usdt: float | None = None, notify: bool = True) -> Result:
+             paper_usdt: float | None = None, notify: bool = True, lock: bool = True) -> Result:
     if mode == "live" and not unattended and not sys.stdin.isatty():
         raise RunError("live mode needs a terminal to confirm orders (or use --unattended for stops only)")
     now = now or now_utc()
     now_s = now.isoformat()
     market = market or Market(quote=cfg.quote)
-    with run_lock(base / "state" / ".lock"):
+    with (run_lock(base / "state" / ".lock") if lock else nullcontext()):
         spath = state_file(base, mode if mode != "dry" else "live", cfg)
         state = State.load(spath, paper_usdt=paper_usdt if mode == "paper" else None)
         if mode == "paper" and not state.data["paper"]["balances"]:

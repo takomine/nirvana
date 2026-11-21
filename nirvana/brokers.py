@@ -18,13 +18,27 @@ from .timeutil import UTC, now_utc
 
 
 class BrokerError(RuntimeError):
-    pass
+    """`definite` = the exchange certainly did NOT accept the request (a clean 4xx rejection).
+    Anything else (timeout, 5xx, clock skew, rate limit) is ambiguous: the order may exist."""
+
+    def __init__(self, msg: str, status: int | None = None, code: int | None = None, definite: bool = False):
+        super().__init__(msg)
+        self.status, self.code, self.definite = status, code, definite
+
+
+AMBIGUOUS_CODES = {-1000, -1001, -1003, -1006, -1007, -1008, -1021}
 
 
 def norm_order(raw: dict) -> dict:
     """Binance order JSON -> the fields we use."""
+    commissions: dict[str, float] = {}
+    for f in raw.get("fills") or []:
+        a = f.get("commissionAsset")
+        if a:
+            commissions[a] = commissions.get(a, 0.0) + float(f.get("commission", 0))
     return {
-        "client_id": raw.get("clientOrderId") or raw.get("origClientOrderId"),
+        "commissions": commissions if raw.get("fills") is not None else None,
+        "client_id": raw.get("origClientOrderId") or raw.get("clientOrderId"),
         "status": raw.get("status"),
         "side": raw.get("side"),
         "price": raw.get("price"),
@@ -57,8 +71,9 @@ class BinanceBroker:
         except Exception:
             self._offset_ms = 0
 
-    def _signed(self, method: str, path: str, params: dict | None = None):
-        params = dict(params or {})
+    def _signed(self, method: str, path: str, params: dict | None = None, _retry: bool = True):
+        base_params = dict(params or {})
+        params = dict(base_params)
         params["timestamp"] = int(time.time() * 1000) + self._offset_ms
         params["recvWindow"] = self.recv_window
         qs = urlencode(params)
@@ -73,7 +88,17 @@ class BinanceBroker:
         except ValueError:
             body = {"msg": r.text[:200]}
         if r.status_code >= 400:
-            raise BrokerError(f"{method} {path}: HTTP {r.status_code} code={body.get('code')} {body.get('msg')}")
+            code = body.get("code") if isinstance(body, dict) else None
+            if _retry and code == -1021:            # clock drift: resync and retry once
+                self._sync_time()
+                return self._signed(method, path, base_params, _retry=False)
+            if _retry and r.status_code in (418, 429) and method == "GET":
+                time.sleep(3)
+                return self._signed(method, path, base_params, _retry=False)
+            definite = (400 <= r.status_code < 500 and r.status_code not in (408, 418, 429)
+                        and isinstance(code, int) and code not in AMBIGUOUS_CODES)
+            raise BrokerError(f"{method} {path}: HTTP {r.status_code} code={code} {body.get('msg')}",
+                              status=r.status_code, code=code, definite=definite)
         return body
 
     # ---- safety
@@ -99,7 +124,7 @@ class BinanceBroker:
         try:
             return norm_order(self._signed("GET", "/api/v3/order", {"symbol": symbol, "origClientOrderId": client_id}))
         except BrokerError as e:
-            if "code=-2013" in str(e):  # order does not exist
+            if e.code == -2013:  # order does not exist
                 return None
             raise
 
@@ -119,7 +144,7 @@ class BinanceBroker:
         try:
             return norm_order(self._signed("DELETE", "/api/v3/order", {"symbol": symbol, "origClientOrderId": client_id}))
         except BrokerError as e:
-            if "code=-2011" in str(e):  # unknown order / already closed
+            if e.code == -2011:  # unknown order / already closed
                 return self.get_order(symbol, client_id)
             raise
 
@@ -186,9 +211,9 @@ class PaperBroker:
         bid, ask = self.market.book(coin)
         q, px = float(qty), float(price)
         if side == "BUY" and q * px > self.free("USDT") + 1e-9:
-            raise BrokerError(f"paper: insufficient USDT ({self.free('USDT'):.2f} free)")
+            raise BrokerError(f"paper: insufficient USDT ({self.free('USDT'):.2f} free)", 400, -2010, True)
         if side == "SELL" and q > self._bal(coin) + 1e-12:
-            raise BrokerError(f"paper: insufficient {coin}")
+            raise BrokerError(f"paper: insufficient {coin}", 400, -2010, True)
         o = {"client_id": client_id, "symbol": symbol, "side": side, "price": str(price), "orig_qty": str(qty),
              "executed_qty": "0", "quote_qty": "0", "status": "NEW", "tif": tif,
              "placed": self.now.astimezone(UTC).isoformat()}

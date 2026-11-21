@@ -37,6 +37,26 @@ A rule-based **Binance spot** bot for your Ubuntu VM. It runs once a day right a
 | 17 | A failed run went silent | Telegram alert: "run FAILED, stops NOT checked" |
 | 18 | Bot positions mixed with your other coins | The bot tracks only what it bought, so a stop never sells your separate holdings |
 
+### Fixed after an independent review by Claude Fable 5.2
+- A network timeout while sending an order no longer causes a duplicate order. An unclear send stays tracked and is checked by its order ID on the next run. Only a clear rejection frees the tranche.
+- A buy is **blocked** if the resulting position would be too small to sell at the stop (Binance's minimum order is 5 USDT). Small positions are never quietly dropped; you get a "sell by hand" alert.
+- `check` reads your fills (read-only) when keys are present, so its report and stop checks see real positions.
+- Every kind of failed run sends a Telegram alert.
+- `buy_rest` respects the 2% per-coin cap. Unused ladder parts expire only after the order is sent.
+- A stop missed on an earlier day (VM down) still fires. Stale candles block trading that coin.
+  If BTC data fails, stops are still checked and buys are blocked.
+- Raising a wrong-if makes the new level the floor.
+- The key check fails closed and refuses transfer permissions.
+- Typos in `plan.yaml` (`wrongif:`, `coins: BTC`) are errors, not silently ignored.
+- Stop sells re-quote and retry up to 3 times. Sells are capped at your real free balance, and real exchange fees are used when Binance reports them.
+- A regime flip to Risk-off cancels resting buys above the new deployment cap.
+- The updater keeps trading keys out of the test environment, tests in a separate venv, and installs dependencies only after tests pass.
+  It reports each failing commit once, and it shares the bot's lock so a run never sees half-updated files.
+
+### Sizes that work on a ₱10k account
+Each position must still be worth more than about 6 USDT **at its stop price**, or Binance can't sell it.
+With a stop about 20–25% below entry, a tranche needs to be at least **₱600–700**. The bot tells you the exact minimum when a tranche is too small.
+
 ---
 
 ## Setup on the Ubuntu VM (once)
@@ -82,6 +102,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nirvana.timer nirvana-update.timer
 systemctl list-timers | grep nirvana
 ```
+Once your Binance keys are in `.env` and you've watched a few days of `check`, edit `deploy/nirvana.service` in the repo to use
+`run --mode live --unattended`. It records fills and cancels for real, and with `execution.unattended_risk_reducing: true`
+it can fire stops while you sleep. It never buys without you.
+
+**Protect the repo:** anything merged to `main` runs on the VM with your trading keys. Turn on 2FA on GitHub,
+and add a branch protection rule on `main` if anyone else ever gets access.
 
 ## How updates reach the VM
 Changes go to GitHub `main` (from our chats, or your own edits there). Every 10 minutes the VM runs `deploy/update.sh`:
@@ -146,3 +172,4 @@ Tested offline on synthetic data shaped like tonight's market. Run `check` on th
 - Paper fills are optimistic: a resting buy "fills" if the day's low touched the price.
 - Fear & Greed comes from alternative.me. If it's down, it counts as unknown, which means more caution.
 - Exits and take-profits are alerts only. You decide those.
+- Testnet: prices come from mainnet while orders go to testnet, so fills there don't match real behaviour. Use it only to test the plumbing.

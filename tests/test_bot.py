@@ -102,8 +102,8 @@ def test_tight_stop_is_blocked_and_wide_stop_passes(tmp_path):
           wrong_if: 46000
           fill_by: 2026-12-04
           tranches:
-            - {id: TIGHT, type: limit, price: 49000, php: 500}
-            - {id: WIDE, type: limit, price: 56000, php: 500}
+            - {id: TIGHT, type: limit, price: 49000, php: 400}
+            - {id: WIDE, type: limit, price: 56000, php: 700}
     """)
     res, _ = run(tmp_path, p)
     assert "BLOCK" in kinds(res, "BTC", "TIGHT")
@@ -120,7 +120,7 @@ def test_risk_off_blocks_marketable_but_override_works(tmp_path):
           wrong_if: 46000
           fill_by: 2026-12-04
           tranches:
-            - {{id: M1, type: marketable, max_price: 60500, php: 500{extra}}}
+            - {{id: M1, type: marketable, max_price: 60500, php: 700{extra}}}
     """
     res, _ = run(tmp_path, write_plan(tmp_path, coins.format(extra="")))
     assert "BLOCK" in kinds(res, "BTC", "M1") and not res.actions
@@ -195,7 +195,7 @@ def test_daily_close_below_wrong_if_sells_everything_and_blocks_reentry(tmp_path
           wrong_if: 60000
           fill_by: 2026-12-04
           tranches:
-            - {id: B1, type: limit, price: 75000, php: 500}
+            - {id: B1, type: limit, price: 75000, php: 800}
     """)
     res, _ = run(tmp_path, p, mode="paper")
     sells = [a for a in res.actions if a.kind == "sell"]
@@ -239,7 +239,7 @@ GOOD = """
       wrong_if: 46000
       fill_by: 2026-12-04
       tranches:
-        - {id: B1, type: limit, price: 56000, php: 500}
+        - {id: B1, type: limit, price: 56000, php: 800}
 """
 
 
@@ -320,6 +320,9 @@ def test_unattended_executes_only_risk_reducing(tmp_path):
             sent.append(a[-1])
             return None
 
+        def free(self, asset):
+            return 10.0
+
     acts = [Action("buy", "BTC", "BTCUSDT", "nvx-buy", "b", side="BUY", tif="GTC", price=Decimal(1), qty=Decimal(1),
                    tranche_key="test-1:B1"),
             Action("sell", "BTC", "BTCUSDT", "nvs-BTC-1", "stop", side="SELL", tif="IOC", price=Decimal(1),
@@ -327,7 +330,7 @@ def test_unattended_executes_only_risk_reducing(tmp_path):
             Action("sell", "BTC", "BTCUSDT", "nvx-BTC-1", "exit", side="SELL", tif="IOC", price=Decimal(1),
                    qty=Decimal(1), risk_reducing=True, human_only=True)]
     res = Result(Regime("chop", {}, {}), [], acts)
-    execute(res, B(), st, c, load_plan(write_plan(tmp_path, GOOD)), None, "live", True, NOW.isoformat(), print)
+    execute(res, B(), st, c, load_plan(write_plan(tmp_path, GOOD)), tonight_market(), "live", True, NOW.isoformat(), print)
     assert sent == ["nvs-BTC-1"]
 
 
@@ -340,7 +343,7 @@ def test_plan_rejects_buy_below_wrong_if_and_duplicate_ids(tmp_path):
           wrong_if: 60000
           fill_by: 2026-12-04
           tranches:
-            - {id: B1, type: limit, price: 56000, php: 500}
+            - {id: B1, type: limit, price: 56000, php: 800}
     """)
     plan = load_plan(p)
     assert any("at/below wrong_if" in e for e in plan.errors["BTC"])
@@ -349,8 +352,8 @@ def test_plan_rejects_buy_below_wrong_if_and_duplicate_ids(tmp_path):
           status: active
           wrong_if: 50000
           tranches:
-            - {id: B1, type: limit, price: 56000, php: 500}
-            - {id: B1, type: limit, price: 57000, php: 500}
+            - {id: B1, type: limit, price: 56000, php: 800}
+            - {id: B1, type: limit, price: 57000, php: 800}
     """)
     with pytest.raises(ConfigError, match="used twice"):
         load_plan(p)
@@ -369,3 +372,184 @@ def test_advisor_respects_monthly_cap(tmp_path, monkeypatch):
     _add_spend(tmp_path, __import__("nirvana.timeutil", fromlist=["now_utc"]).now_utc().strftime("%Y-%m"), 79.99)
     with pytest.raises(AdvisorError, match="cap"):
         review(tmp_path, cfg().advisor, "plan", {"a": 1}, {}, session=object())
+
+
+# ================================================================== Fable review regressions
+
+from nirvana.brokers import BrokerError  # noqa: E402
+from nirvana.engine import Action, Engine, Result  # noqa: E402
+from nirvana.regime import Regime  # noqa: E402
+from nirvana.runner import execute, sync  # noqa: E402
+
+
+class FlakyBroker:
+    """Times out on the first placement (order actually reaches the exchange), works afterwards."""
+
+    def __init__(self, definite=False):
+        self.orders, self.calls, self.definite = {}, 0, definite
+
+    def place_limit(self, symbol, side, qty, price, tif, cid):
+        self.calls += 1
+        if self.calls == 1:
+            if not self.definite:
+                self.orders[cid] = {"status": "NEW", "executed_qty": "0", "quote_qty": "0"}
+            raise BrokerError("timeout", None, None, definite=self.definite)
+        self.orders[cid] = {"status": "NEW", "executed_qty": "0", "quote_qty": "0"}
+        return self.orders[cid]
+
+    def get_order(self, symbol, cid):
+        return self.orders.get(cid)
+
+    def free(self, asset):
+        return 1000.0
+
+
+def _buy_action():
+    return Action("buy", "BTC", "BTCUSDT", "nvX-B1-0", "b", side="BUY", tif="GTC", price=Decimal("56000"),
+                  qty=Decimal("0.0002"), tranche_key="test-1:B1", notional=11.2)
+
+
+def test_timeout_on_send_keeps_order_tracked_and_never_duplicates(tmp_path):
+    plan = load_plan(write_plan(tmp_path, GOOD))
+    st = State.load(tmp_path / "s.json")
+    b = FlakyBroker(definite=False)
+    res = Result(Regime("chop", {}, {}), [], [_buy_action()])
+    execute(res, b, st, cfg(), plan, tonight_market(), "paper", False, NOW.isoformat(), print)
+    assert st.data["orders"]["nvX-B1-0"]["status"] == "NEW"          # still tracked as possibly live
+    assert st.data["tranches"]["test-1:B1"]["status"] == "open"
+    sync(st, cfg(), b, tonight_market(), NOW.isoformat(), print)    # next run finds it by client id
+    e = Engine(cfg(), plan, st, tonight_market(), NOW)
+    e.run()
+    assert not [a for a in e.actions if a.kind == "buy"]            # no second order
+
+
+def test_definite_rejection_frees_the_tranche(tmp_path):
+    plan = load_plan(write_plan(tmp_path, GOOD))
+    st = State.load(tmp_path / "s.json")
+    execute(Result(Regime("chop", {}, {}), [], [_buy_action()]), FlakyBroker(definite=True), st, cfg(), plan,
+            tonight_market(), "paper", False, NOW.isoformat(), print)
+    assert st.data["orders"]["nvX-B1-0"]["status"] == "REJECTED"
+    assert st.data["tranches"]["test-1:B1"]["status"] == "pending"
+
+
+def test_unstoppably_small_buy_is_blocked(tmp_path):
+    p = write_plan(tmp_path, """
+        BTC:
+          status: active
+          wrong_if: 46000
+          fill_by: 2026-12-04
+          tranches:
+            - {id: B1, type: limit, price: 56000, php: 420}
+    """)
+    res, text = run(tmp_path, p)
+    assert "too small to stop-sell" in text and not res.actions
+
+
+def test_unsellable_position_is_kept_and_flagged_not_dropped(tmp_path):
+    _held_state(tmp_path, coin="BTC", qty=0.00008, cost=4.9)   # ~4.7 USDT at the stop: below 5 USDT minimum
+    p = write_plan(tmp_path, "BTC: {status: active, wrong_if: 60000, fill_by: 2026-12-04, tranches: []}\n")
+    res, text = run(tmp_path, p, mode="paper")
+    assert "SELL BY HAND" in text
+    assert State.load(tmp_path / "state" / "state.paper.json").qty("BTC") > 0
+
+
+def test_buy_rest_respects_per_coin_cap(tmp_path):
+    p = write_plan(tmp_path, """
+        BTC:
+          status: active
+          wrong_if: 46000
+          fill_by: 2026-11-20
+          on_deadline: buy_rest
+          deadline_max_price: 60500
+          tranches:
+            - {id: B1, type: limit, price: 56000, php: 700}
+            - {id: B2, type: limit, price: 55000, php: 700}
+            - {id: B3, type: limit, price: 54000, php: 700}
+    """)
+    res, text = run(tmp_path, p)
+    assert "exceeds the 2% cap" in text and not res.actions
+
+
+def test_missed_stop_day_is_still_acted_on(tmp_path):
+    btc = series(62000, 58951.51, 260, 0.05, shape="hump")
+    c = btc[-2]
+    btc[-2] = type(c)(c.open_time, c.open, c.high, 50000, 51000, 1, 2e8)   # yesterday closed below 52300
+    st = _held_state(tmp_path)
+    st.positions["BTC"]["opened"] = (NOW - timedelta(days=5)).isoformat()
+    st.save()
+    p = write_plan(tmp_path, "BTC: {status: active, wrong_if: 52300, fill_by: 2026-12-04, tranches: []}\n")
+    res, text = run(tmp_path, p, mode="paper", market=tonight_market(candles={"BTC": btc}))
+    assert "missed on an earlier day" in text and [a for a in res.actions if a.kind == "sell"]
+
+
+def test_stale_candles_block_buys(tmp_path):
+    res, text = run(tmp_path, write_plan(tmp_path, GOOD), now=NOW + timedelta(days=3))
+    assert "data is stale" in text and not res.actions
+
+
+def test_btc_data_failure_still_checks_stops(tmp_path):
+    class Broken(type(tonight_market())):
+        def candles(self, coin, days=400):
+            if coin == "BTC":
+                raise RuntimeError("down")
+            return super().candles(coin, days)
+    m = tonight_market()
+    m.__class__ = Broken
+    m._c["HYPE"] = series(60, 45, 120, 0.09)
+    _held_state(tmp_path, coin="HYPE", qty=0.5, cost=30)
+    p = write_plan(tmp_path, "BTC: {status: watch}\nHYPE: {status: active, wrong_if: 48, fill_by: 2026-12-04, tranches: []}\n")
+    res, text = run(tmp_path, p, mode="paper", market=m)
+    assert res.regime.name == "risk_off" and [a for a in res.actions if a.kind == "sell" and a.coin == "HYPE"]
+
+
+def test_raised_wrong_if_becomes_the_floor(tmp_path):
+    _held_state(tmp_path, floor=52300)
+    run(tmp_path, write_plan(tmp_path, "BTC: {status: active, wrong_if: 57000, fill_by: 2026-12-04, tranches: []}\n"),
+        mode="paper")
+    res, text = run(tmp_path, write_plan(tmp_path, "BTC: {status: active, wrong_if: 53000, fill_by: 2026-12-04, tranches: []}\n"),
+                    mode="paper")
+    assert "lowers wrong-if 57000" in text
+
+
+def test_preflight_fails_closed_and_refuses_transfers():
+    class K:
+        def __init__(self, r):
+            self.r = r
+
+        def key_restrictions(self):
+            return self.r
+    with pytest.raises(RunError):
+        preflight_live(K({"enableSpotAndMarginTrading": True}), print)          # field missing
+    with pytest.raises(RunError, match="permitsUniversalTransfer"):
+        preflight_live(K({"enableWithdrawals": False, "enableSpotAndMarginTrading": True,
+                          "permitsUniversalTransfer": True}), print)
+
+
+def test_plan_typos_and_scalar_blackout_coins_fail_loudly(tmp_path):
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_plan(write_plan(tmp_path, "BTC: {status: watch, wrongif: 50000}\n"))
+    with pytest.raises(ConfigError, match="list like"):
+        load_plan(write_plan(tmp_path, "BTC: {status: watch}\n",
+                             extra="blackouts: [{name: x, coins: BTC, start: 2026-12-01, end: 2026-12-02}]"))
+
+
+def test_stop_sell_retries_with_fresh_quote(tmp_path):
+    plan = load_plan(write_plan(tmp_path, GOOD))
+    st = State.load(tmp_path / "s.json")
+    st.apply_buy("BTC", 0.0003, 17.7, NOW.isoformat(), 52300)
+    sent = []
+
+    class B:
+        def place_limit(self, symbol, side, qty, price, tif, cid):
+            sent.append(cid)
+            if len(sent) == 1:
+                return {"status": "EXPIRED", "executed_qty": "0", "quote_qty": "0"}
+            return {"status": "FILLED", "executed_qty": str(qty), "quote_qty": str(qty * price)}
+
+        def free(self, asset):
+            return 0.0003
+    a = Action("sell", "BTC", "BTCUSDT", "nvs-BTC-20261121-0", "stop", side="SELL", tif="IOC",
+               price=Decimal("58000"), qty=Decimal("0.0003"), risk_reducing=True)
+    execute(Result(Regime("chop", {}, {}), [], [a]), B(), st, cfg(), plan, tonight_market(), "paper", False,
+            NOW.isoformat(), print)
+    assert sent == ["nvs-BTC-20261121-0", "nvs-BTC-20261121-0-r1"] and st.qty("BTC") == 0
