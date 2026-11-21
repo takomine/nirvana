@@ -114,7 +114,8 @@ def apply_order_update(state: State, cfg: Config, rec: dict, fresh: dict | None,
             out(f"FILL  BUY  {coin} {dq:.8g} for {dquote:.2f} USDT ({rec['client_id']})")
         else:
             proceeds = dquote - comm.get(cfg.quote, 0.0) if exact else dquote * (1 - cfg.fee)
-            pnl = state.apply_sell(coin, dq, proceeds)
+            px = dquote / dq if dq else 0.0
+            pnl = state.apply_sell(coin, dq, proceeds, dust_qty=(1.0 / px) if px else 0.0)  # < $1 left = closed
             out(f"FILL  SELL {coin} {dq:.8g} for {proceeds:.2f} USDT, realized {pnl:+.2f} USDT ({rec['client_id']})")
     rec["executed_qty"], rec["quote_qty"] = str(new_q), str(new_quote)
     rec["status"] = fresh.get("status") or rec.get("status")
@@ -390,8 +391,9 @@ def run_once(base: Path, cfg: Config, plan: Plan, mode: str, unattended: bool = 
             "executed": done,
         })
         if notify and cfg.notify:
+            label = "PAPER " if mode == "paper" else ""
             urgent = any(a.kind == "sell" for a in res.actions) or any(
                 d.kind == "ALERT" and ("STOP" in d.msg or "BY HAND" in d.msg or "HOLDING" in d.msg)
                 for d in res.decisions)
-            send(short_summary(res, plan, mode), title=f"Nirvana: {res.regime.label()}", urgent=urgent)
+            send(short_summary(res, plan, mode), title=f"Nirvana {label}: {res.regime.label()}", urgent=urgent)
         return res

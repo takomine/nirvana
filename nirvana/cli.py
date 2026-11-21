@@ -26,6 +26,10 @@ def cmd_run(args) -> int:
     try:
         run_once(base, cfg, plan, mode, unattended=getattr(args, "unattended", False), notify=not args.quiet,
                  lock=False)
+        if args.cmd == "check" and cfg.daily_paper:
+            print("\n" + "=" * 30 + " PAPER TRADING (fake money, real prices) " + "=" * 30)
+            mode = "paper"
+            run_once(base, cfg, plan, "paper", notify=not args.quiet, lock=False)
     except Exception as e:  # noqa: BLE001 - any failure must reach the phone
         if cfg.notify and not args.quiet:  # a silent cron failure would mean stops go unchecked
             from .notify import send
@@ -52,7 +56,20 @@ def cmd_status(args) -> int:
         for c, s in st["stopped"].items():
             print(f"  stopped: {c} under plan {s['plan_id']} ({s.get('why', '')})")
         if mode == "paper":
-            print(f"  paper balances: {st['paper'].get('balances')}")
+            bal = st["paper"].get("balances", {})
+            print(f"  paper balances: {bal}")
+            try:
+                m = Market(quote=cfg.quote)
+                equity = bal.get(cfg.quote, 0.0) + sum(q * m.book(c)[0] for c, q in bal.items() if c != cfg.quote and q)
+                start = cfg.budget_php / plan.php_per_usdt
+                print(f"  paper equity {equity:.2f} USDT vs start {start:.2f} ({equity / start - 1:+.2%}); "
+                      f"= ₱{equity * plan.php_per_usdt:,.0f}")
+            except Exception as e:  # noqa: BLE001
+                print(f"  (could not price paper holdings: {e})")
+            fills = [o for o in st["paper"].get("orders", {}).values() if float(o.get("executed_qty", 0)) > 0]
+            for o in fills:
+                print(f"  paper fill: {o['side']} {o['symbol']} {float(o['executed_qty']):.6g} @ "
+                      f"{float(o['quote_qty']) / float(o['executed_qty']):.6g} ({o['placed'][:10]})")
     from .advisor import month_spend
     print(f"Claude spend this month: ${month_spend(base, now_utc().strftime('%Y-%m')):.2f}")
     return 0

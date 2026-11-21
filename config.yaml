@@ -43,8 +43,16 @@ regime:
 
 data:
   min_history_days: 30       # fewer closed daily candles than this = no trading that coin
-  fx_warn_days: 3            # php_per_usdt older than this: warning
-  fx_block_days: 7           # older than this: no new buys
+  # php_per_usdt only converts peso amounts to USDT. Budget, tranches and caps are all in pesos, so
+  # risk ratios don't depend on it; a few % of FX drift just changes order sizes by a few %.
+  fx_warn_days: 14           # php_per_usdt older than this: warning
+  fx_block_days: 45          # older than this: no new buys
+
+daily:
+  # What the daily 08:05 `check` (systemd) does besides the read-only check of your real account.
+  # paper_trading: also run a PAPER session (fake money, real prices) and send its summary.
+  # Controlled from the repo, so it changes on the VM without touching systemd.
+  paper_trading: true
 
 execution:
   # Live mode always asks you to type YES per order, and refuses to run without a terminal.

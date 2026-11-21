@@ -24,7 +24,7 @@ If tako wants one of these changed, explain the risk and get explicit confirmati
    - worst-case loss per coin (incl. 3% gap + fees) <= 2% of the budget
    - each tranche big enough to stay stop-sellable: worth >= ~6 USDT AT THE WRONG-IF (usually ₱600-700+);
      the engine blocks smaller ones
-   - fresh `manual_inputs` timestamps (ETF flows go stale after 36h, FX after 7 days)
+   - fresh `manual_inputs` timestamps (ETF flows go stale after 36h -> counted as unknown/cautious; FX blocks buys after 45 days)
    - a new `plan_id` when starting a fresh plan (it resets stopped coins and cancels old-plan orders)
 3. Commit messages say what changed for trading, e.g. `plan: HYPE ladder 58/54, wrong-if 41`.
 

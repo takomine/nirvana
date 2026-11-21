@@ -58,17 +58,28 @@ def kinds(res, coin, tranche=None):
 def test_shipped_config_and_plan_load():
     c = load_config(ROOT / "config.yaml")
     p = load_plan(ROOT / "plan.yaml")
-    assert c.venue == "binance" and "BTC" in p.coins and p.coins["BTC"].wrong_if == 52300
+    assert c.venue == "binance" and "BTC" in p.coins and p.coins["BTC"].status == "watch"
+    assert p.coins["HYPE"].status == "active" and p.coins["HYPE"].wrong_if is not None
 
 
-def test_shipped_plan_is_blocked_for_the_right_reasons(tmp_path):
-    res, text = run(tmp_path, ROOT / "plan.yaml")
+def test_shipped_plan_places_one_resting_hype_buy_within_caps(tmp_path):
+    res, text = run(tmp_path, ROOT / "plan.yaml", now=NOW + timedelta(hours=4))
     assert res.regime.name == "risk_off"
-    assert res.actions == []
-    assert "exceeds the 2% cap" in text                 # BTC plan risk with gap + fees
-    assert "stop room 13.5%" in text                    # HYPE-2 at 52 vs wrong-if 45
-    assert "below the exchange minimum" in text         # HYPE-1 ₱300 < 5 USDT
-    assert "Risk-off: only resting limit" in text       # BTC-1 marketable
+    buys = [a for a in res.actions if a.kind == "buy"]
+    assert len(buys) == 1 and buys[0].coin == "HYPE" and buys[0].tif == "GTC"   # resting limit: allowed in risk-off
+    assert buys[0].risk <= 0.02 * res.summary["budget_usdt"]
+    # still sellable at the wrong-if (Binance minimum 5 USDT, engine wants 1.2x)
+    w = load_plan(ROOT / "plan.yaml").coins["HYPE"].wrong_if
+    assert float(buys[0].qty) * w * 0.97 * 0.98 >= 6.0
+
+
+def test_shipped_plan_respects_unlock_blackout(tmp_path):
+    from datetime import datetime, timezone
+    m = tonight_market(candles={"BTC": series(62000, 58951.51, 260, 0.05, shape="hump",
+                                              last_day=datetime(2026, 12, 5, tzinfo=timezone.utc)),
+                                "HYPE": series(40, 61.07, 120, 0.09, last_day=datetime(2026, 12, 5, tzinfo=timezone.utc))})
+    res, text = run(tmp_path, ROOT / "plan.yaml", market=m, now=datetime(2026, 12, 6, 0, 10, tzinfo=timezone.utc))
+    assert "blackout" in text and not [a for a in res.actions if a.kind == "buy"]
 
 
 # ------------------------------------------------------------------ bug 1: cap check
@@ -361,7 +372,9 @@ def test_plan_rejects_buy_below_wrong_if_and_duplicate_ids(tmp_path):
 
 def test_stale_fx_blocks_buys(tmp_path):
     p = write_plan(tmp_path, GOOD)
-    res, text = run(tmp_path, p, now=NOW + timedelta(days=9))
+    c = cfg()
+    c.data["fx_block_days"] = 7
+    res, text = run(tmp_path, p, now=NOW + timedelta(days=9), c=c)
     assert "php_per_usdt is 9 days old" in text and not res.actions
 
 

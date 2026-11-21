@@ -157,22 +157,16 @@ Also set a spend limit in the Claude Console.
 
 ---
 
-## What the bot says about tonight's plan (2026-11-21)
+## Current plan (2026-11-22-hype-a)
+HYPE only. One resting limit buy, ₱700 at $57.5, with a wrong-if close of $43 (worst case about ₱193, which is 2% of ₱10k).
+BTC is watch-only, for the regime. There's a buy blackout Dec 5–10 for the HYPE unlock and FOMC.
+The research and the reasoning are in `knowledge/research/2026-11-22-hype.md`.
 
-Tested offline on synthetic data shaped like tonight's market. Run `check` on the VM for real numbers.
-
-- **BTC: blocked.** The plan's worst case is about ₱281 against the ₱200 cap once the gap buffer and fees are counted. Shrink the tranches to about 70% of size.
-- **BTC-1: blocked.** It's a marketable buy in Risk-off.
-- **BTC-2 ($57k): blocked.** It has 8.2% stop room vs. the ~15% needed (2.7x ATR).
-- **HYPE-2 ($52 vs a $48 wrong-if): blocked.** It has 7.7% stop room vs. the ~24% needed.
-- **HYPE-1 (₱300): below Binance's 5 USDT minimum.** HYPE also has very little history on Binance.
-
-**Your decisions:**
-1. Resize BTC, or accept a lower budget per tranche.
-2. Either drop the "buy now" tranches while it's Risk-off, or override them with a written reason.
-3. Set the BTC wrong-if around $48k, or move BTC-2 higher.
-4. Settle HYPE: either a wrong-if around $39 or skip the $52 tranche, and make HYPE-1 at least ₱350.
-5. Confirm the BTC-3 cap (I used $63,000 as a placeholder).
+## Daily routine
+- **08:05 Manila:** the check runs (read-only on your real account), then a **paper** session (fake money, real prices).
+  Your phone gets both summaries. Paper trading is on by default (`daily.paper_trading: true` in `config.yaml`).
+- `python -m nirvana status` shows paper equity, P&L and fills. Paste it to Claude for a review.
+- When the paper results look sensible, deposit and run `python -m nirvana run --mode live` to confirm real orders.
 
 ## Known limits
 - Stops act on the **daily close**. A crash during the day is taken in full until 08:00 the next morning, and the gap buffer only partly covers that.

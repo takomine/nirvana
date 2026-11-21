@@ -1,58 +1,37 @@
-# Nirvana: the current plan. Rewrite this whenever you make a new plan,
-# and give it a NEW plan_id (that resets "stopped" coins and cancels old-plan orders).
-# All prices are USDT (Binance pairs). Amounts are php: or usdt: per tranche.
-#
-# Ported from the 2026-11-21 9:57 PM plan. Amounts for BTC-3 and HYPE-1 were not in the
-# files I got; I inferred them from the ₱2,600 total. CHECK THEM.
-# Several tranches will be BLOCKED by the bot as written. That is deliberate; see README
-# "What the bot will say about tonight's plan".
+# Nirvana plan: HYPE only. Written 2026-11-22 by Claude from the HYPE backtest (see knowledge/research/2026-11-22-hype.md).
+# All prices are USDT (Binance HYPEUSDT). Change this file in the repo, never on the VM.
 
-plan_id: 2026-11-21-a
-created: 2026-11-21T21:57:00+08:00
-valid_until: 2026-12-05T08:00:00+08:00   # after this: no new buys until you write a new plan
+plan_id: 2026-11-22-hype-a
+created: 2026-11-22T01:30:00+08:00
+valid_until: 2026-12-19T08:00:00+08:00   # after this: no new buys until a new plan
 
 manual_inputs:
-  etf_outflows: true                      # multi-day BTC spot ETF outflows?
+  etf_outflows: true                      # Loot input Nov 21 + $1.07B out Nov 9-13 (SoSoValue); stale after 36h -> "unknown" (cautious)
   etf_outflows_updated: 2026-11-21T22:00:00+08:00
   php_per_usdt: 63.94
   php_per_usdt_updated: 2026-11-21T22:00:00+08:00
 
-blackouts:                                # Manila dates, inclusive. No new buys; resting buys get cancelled.
-  - {name: HYPE unlock, coins: [HYPE], start: 2026-12-05, end: 2026-12-07}
+blackouts:                                # Manila dates, inclusive. No new buys; resting buys get cancelled, then re-placed.
+  - {name: HYPE core-contributor unlock (Dec 6), coins: [HYPE], start: 2026-12-05, end: 2026-12-07}
   - {name: FOMC, coins: all, start: 2026-12-08, end: 2026-12-10}
 
 coins:
   BTC:
-    status: active                        # active | watch | off
+    status: watch                         # regime only (Risk-off while BTC < SMA200 and fear is extreme)
     narrative: store-of-value
-    wrong_if: 52300                       # sell everything on a UTC daily CLOSE below this
-    fill_by: 2026-12-05                   # unfilled tranches after this date...
-    on_deadline: cancel                   # ...cancel | buy_rest (needs deadline_max_price)
-    take_profit_levels: [68000, 74000]    # alerts only
-    tranches:
-      - {id: BTC-1, type: marketable, max_price: 60338.1, php: 600}
-      - {id: BTC-2, type: limit, price: 57000, php: 600}
-      - id: BTC-3
-        type: conditional                 # becomes a marketable buy when `when` is true
-        max_price: 63000                  # my placeholder cap; set your own
-        php: 600
-        when:
-          any:
-            - calm_days: {n: 2, floor: 55632, max_tr_atr: 1.0}
-            - close_above: 62000
 
   HYPE:
     status: active
     narrative: perp-dex
-    wrong_if: 45                          # Loot export: $45 supersedes the $48 said once on Nov 21
-    fill_by: 2026-12-04
+    # Wrong-if 43: below the Aug 2026 lows (~51-52.5) with room for HYPE's ~8-9% daily range.
+    # A daily CLOSE under 43 sells everything. Stop room from 57.5 = 25.2% (2.9x today's ATR14 of 8.7%).
+    wrong_if: 43
+    fill_by: 2026-12-19
     on_deadline: cancel
+    take_profit_levels: [72, 85]          # alerts only: SMA200 area, then the Sep high zone
+    alert_above: 70                       # tell me if it closes back above ~SMA200 (strength; we may plan an add)
     tranches:
-      - {id: HYPE-1, type: marketable, max_price: 61, php: 300}
-      - {id: HYPE-2, type: limit, price: 52, php: 500}
-
-  ETH:  {status: watch, narrative: smart-contract-l1}
-  SOL:  {status: watch, narrative: smart-contract-l1, alert_below: 70}
-  BNB:  {status: watch, narrative: exchange}
-  ZEC:  {status: watch, narrative: privacy, alert_below: 760, max_pct: 10}
-  NEAR: {status: watch, narrative: ai-l1, alert_below: 2.60}   # limit idea at 2.60, no amount set
+      # One resting limit. Risk-off allows only resting limits. ~5% under the Nov 21 price (~60.4);
+      # backtest: a -4%..-8% limit filled within 14 days 61-80% of the time.
+      # Worst case incl. 3% gap + fees: ~P193 (cap P200 = 2% of P10k). Still sellable at the stop (~8 USDT there).
+      - {id: HYPE-A, type: limit, price: 57.5, php: 700}
