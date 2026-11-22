@@ -1,37 +1,52 @@
-# Nirvana plan: HYPE only. Written 2026-11-22 by Claude from the HYPE backtest (see knowledge/research/2026-11-22-hype.md).
+# Nirvana plan: HYPE only, TREND-FOLLOWING. Written 2026-11-22 by Claude for tako's paper test.
+# Why: Binance backtest Jun 2024 -> Nov 2026 (fees 0.1%/side): buying RSI<30 dips lost 64.5% on SOL and 33.5% on BTC;
+# holding only while close > SMA50 was the best rule (BTC +42.4% vs buy-and-hold -14.9%; SOL -30% vs -58.6%).
+# Matches knowledge/quant/FINDINGS.md #3 (50-day-high breakouts kept their edge out of sample).
+# See knowledge/research/2026-11-22-trend-switch.md. tako decides which coins Nirvana trades: HYPE only for now.
 # All prices are USDT (Binance HYPEUSDT). Change this file in the repo, never on the VM.
 
-plan_id: 2026-11-22-hype-a
-created: 2026-11-22T01:30:00+08:00
-valid_until: 2026-12-19T08:00:00+08:00   # after this: no new buys until a new plan
+plan_id: 2026-11-22-hype-trend
+created: 2026-11-22T09:00:00+08:00
+valid_until: 2027-01-31T08:00:00+08:00   # after this: no new buys until a new plan
 
 manual_inputs:
-  etf_outflows: true                      # Loot input Nov 21 + $1.07B out Nov 9-13 (SoSoValue); stale after 36h -> "unknown" (cautious)
-  etf_outflows_updated: 2026-11-21T22:00:00+08:00
+  etf_outflows: true                      # US spot BTC/ETH ETFs kept losing billions last week (BeInCrypto/SoSoValue, Nov 22)
+  etf_outflows_updated: 2026-11-22T09:00:00+08:00
   php_per_usdt: 63.94
   php_per_usdt_updated: 2026-11-21T22:00:00+08:00
 
-blackouts:                                # Manila dates, inclusive. No new buys; resting buys get cancelled, then re-placed.
+blackouts:                                # Manila dates, inclusive. No new buys.
   - {name: HYPE core-contributor unlock (Dec 6), coins: [HYPE], start: 2026-12-05, end: 2026-12-07}
   - {name: FOMC, coins: all, start: 2026-12-08, end: 2026-12-10}
+  - {name: HYPE team unlock (Jan 6), coins: [HYPE], start: 2027-01-05, end: 2027-01-07}
 
 coins:
   BTC:
-    status: watch                         # regime only (Risk-off while BTC < SMA200 and fear is extreme)
+    status: watch                         # regime only
     narrative: store-of-value
 
   HYPE:
     status: active
     narrative: perp-dex
-    # Wrong-if 43: below the Aug 2026 lows (~51-52.5) with room for HYPE's ~8-9% daily range.
-    # A daily CLOSE under 43 sells everything. Stop room from 57.5 = 25.2% (2.9x today's ATR14 of 8.7%).
-    wrong_if: 43
-    fill_by: 2026-12-19
+    # ENTRY: buy only after a daily close ABOVE HYPE's 50-day average (today: close 61.5 vs SMA50 78.5 -> no buy, cash).
+    # EXIT: sell all on a daily close back BELOW the SMA50 (trend_exit_sma; asks YES in live, automatic in paper).
+    # BACKSTOP: wrong-if 62 = disaster stop. Stop room from the 82 cap = 24.4% = 2.9x today's ATR14 (8.5%).
+    # While the close is under 62 the engine reports "close at/below the wrong-if": that just means no buys yet.
+    wrong_if: 62
+    trend_exit_sma: 50
+    fill_by: 2027-01-31
     on_deadline: cancel
-    take_profit_levels: [72, 85]          # alerts only: SMA200 area, then the Sep high zone
-    alert_above: 70                       # tell me if it closes back above ~SMA200 (strength; we may plan an add)
+    take_profit_levels: [86, 90]          # alerts only: the heaviest 60-day volume zone ($86-90)
+    alert_above: 70                       # tell me when it reclaims ~EMA21 (trend may be turning)
     tranches:
-      # One resting limit. Risk-off allows only resting limits. ~5% under the Nov 21 price (~60.4);
-      # backtest: a -4%..-8% limit filled within 14 days 61-80% of the time.
-      # Worst case incl. 3% gap + fees: ~P193 (cap P200 = 2% of P10k). Still sellable at the stop (~8 USDT there).
-      - {id: HYPE-A, type: limit, price: 57.5, php: 700}
+      # Marketable (IOC limit, never a market order) when the trend condition holds, capped at 82 (no chasing).
+      # Risk-off regime normally blocks marketable buys; the override is deliberate: the coin's own trend is the filter.
+      # Worst case at the 82 cap incl. 3% gap + fees: ~P196 (cap P200 = 2% of P10k paper budget).
+      # Sellable at the wrong-if: ~8 USDT there (engine needs >= 6).
+      - id: HYPE-T1
+        type: conditional
+        when: {all: [{above_sma: 50}]}
+        max_price: 82
+        php: 730
+        allow_in_risk_off: true
+        override_reason: "trend entry: HYPE daily close above its SMA50 (backtest 2026-11-22)"

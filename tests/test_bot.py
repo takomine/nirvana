@@ -62,24 +62,92 @@ def test_shipped_config_and_plan_load():
     assert p.coins["HYPE"].status == "active" and p.coins["HYPE"].wrong_if is not None
 
 
-def test_shipped_plan_places_one_resting_hype_buy_within_caps(tmp_path):
-    res, text = run(tmp_path, ROOT / "plan.yaml", now=NOW + timedelta(hours=4))
+PLAN_NOW = NOW + timedelta(hours=12, minutes=15)          # Nov 22 11:00 Manila, after the shipped plan's 'created'
+PLAN_DAY = NOW.replace(hour=0, minute=0, second=0, microsecond=0)   # last closed candle: Nov 21 UTC
+
+
+def _hype_trend_market(end_price, start_price, days=120, last_day=None, range_pct=0.07):
+    last_day = last_day or PLAN_DAY
+    hype = series(start_price, end_price, days, range_pct, last_day=last_day)
+    kw = {"BTC": series(62000, 58951.51, 260, 0.05, shape="hump", last_day=last_day), "HYPE": hype}
+    return tonight_market(candles=kw, books={"HYPE": (end_price - 0.05, end_price + 0.05)})
+
+
+def test_shipped_plan_holds_cash_while_hype_is_below_sma50(tmp_path):
+    # Downtrend like Nov 22 (97 -> 61.5): no buy, Nirvana sits in cash.
+    res, text = run(tmp_path, ROOT / "plan.yaml", market=_hype_trend_market(61.5, 97), now=PLAN_NOW)
     assert res.regime.name == "risk_off"
+    assert not [a for a in res.actions if a.kind == "buy"]
+
+
+def test_shipped_plan_buys_hype_once_trend_turns_up_within_caps(tmp_path):
+    # Uptrend ending at 75 (close > SMA50): one capped IOC buy, within the 2% cap, sellable at the wrong-if.
+    res, text = run(tmp_path, ROOT / "plan.yaml", market=_hype_trend_market(75, 50), now=PLAN_NOW)
     buys = [a for a in res.actions if a.kind == "buy"]
-    assert len(buys) == 1 and buys[0].coin == "HYPE" and buys[0].tif == "GTC"   # resting limit: allowed in risk-off
+    assert len(buys) == 1 and buys[0].coin == "HYPE" and buys[0].tif == "IOC", text
+    assert float(buys[0].price) <= 82
     assert buys[0].risk <= 0.02 * res.summary["budget_usdt"]
-    # still sellable at the wrong-if (Binance minimum 5 USDT, engine wants 1.2x)
     w = load_plan(ROOT / "plan.yaml").coins["HYPE"].wrong_if
     assert float(buys[0].qty) * w * 0.97 * 0.98 >= 6.0
+    assert "SMA50" in text
 
 
 def test_shipped_plan_respects_unlock_blackout(tmp_path):
     from datetime import datetime, timezone
-    m = tonight_market(candles={"BTC": series(62000, 58951.51, 260, 0.05, shape="hump",
-                                              last_day=datetime(2026, 12, 5, tzinfo=timezone.utc)),
-                                "HYPE": series(40, 61.07, 120, 0.09, last_day=datetime(2026, 12, 5, tzinfo=timezone.utc))})
-    res, text = run(tmp_path, ROOT / "plan.yaml", market=m, now=datetime(2026, 12, 6, 0, 10, tzinfo=timezone.utc))
+    day = datetime(2026, 12, 5, tzinfo=timezone.utc)
+    res, text = run(tmp_path, ROOT / "plan.yaml", market=_hype_trend_market(75, 50, last_day=day),
+                    now=datetime(2026, 12, 6, 0, 10, tzinfo=timezone.utc))
     assert "blackout" in text and not [a for a in res.actions if a.kind == "buy"]
+
+
+def test_above_sma_condition_skips_in_downtrend(tmp_path):
+    p = write_plan(tmp_path, """
+        BTC:
+          status: active
+          wrong_if: 40000
+          fill_by: 2026-12-04
+          tranches:
+            - {id: T, type: conditional, when: {all: [{above_sma: 50}]}, max_price: 60500, php: 700,
+               allow_in_risk_off: true, override_reason: trend test}
+    """)
+    res, text = run(tmp_path, p)   # fake BTC is a hump: close < SMA50
+    assert "SKIP" in kinds(res, "BTC", "T") and "SMA50" in text and not res.actions
+
+
+def test_bad_sma_condition_fails_loudly(tmp_path):
+    p = write_plan(tmp_path, """
+        BTC:
+          status: active
+          wrong_if: 40000
+          fill_by: 2026-12-04
+          trend_exit_sma: 1.5
+          tranches: []
+    """)
+    with pytest.raises(ConfigError):
+        load_plan(p)
+
+
+def test_trend_exit_sells_held_coin_and_asks_in_live(tmp_path):
+    _held_state(tmp_path)
+    p = write_plan(tmp_path, """
+        BTC: {status: active, wrong_if: 40000, trend_exit_sma: 50, fill_by: 2026-12-04, tranches: []}
+    """)
+    res, text = run(tmp_path, p, mode="paper")   # hump: close < SMA50 -> trend exit
+    sells = [a for a in res.actions if a.kind == "sell"]
+    assert len(sells) == 1 and sells[0].human_only and "TREND EXIT" in sells[0].reason
+    assert not sells[0].reason.startswith("WRONG-IF")      # planned exit, not a stop: no re-entry block
+    assert State.load(tmp_path / "state" / "state.paper.json").qty("BTC") == 0
+
+
+def test_no_trend_exit_while_above_sma(tmp_path):
+    _held_state(tmp_path)
+    up = series(40000, 70000, 260, 0.05)
+    p = write_plan(tmp_path, """
+        BTC: {status: active, wrong_if: 40000, trend_exit_sma: 50, fill_by: 2026-12-04, tranches: []}
+    """)
+    res, _ = run(tmp_path, p, mode="paper",
+                 market=tonight_market(candles={"BTC": up}, books={"BTC": (69990.0, 70000.0)}))
+    assert not [a for a in res.actions if a.kind == "sell"]
 
 
 # ------------------------------------------------------------------ bug 1: cap check

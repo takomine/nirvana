@@ -263,7 +263,8 @@ def execute(res: Result, broker, state: State, cfg: Config, plan: Plan, market: 
             state.save()
             continue
 
-        kind = "stop" if a.client_id.startswith("nvs-") else "exit" if a.client_id.startswith("nvx-") else "buy"
+        kind = ("stop" if a.client_id.startswith("nvs-")
+                else "exit" if a.client_id.startswith(("nvx-", "nvt-")) else "buy")
         if kind == "buy":
             cp = plan.coins.get(a.coin)
             floor = state.data["wrong_if_floor"].get(a.coin)

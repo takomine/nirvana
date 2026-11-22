@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from .config import CoinPlan, Config, Plan, Tranche
-from .indicators import atr_pct, avg_quote_volume, prior_high_close, true_ranges
+from .indicators import atr_pct, avg_quote_volume, closes, prior_high_close, sma, true_ranges
 from .marketdata import DataError, SymbolInfo
 from .regime import Regime, compute_regime
 from .risk import size_for_risk, stop_width, worst_loss_for_buy, worst_loss_for_position
@@ -287,6 +287,15 @@ class Engine:
         if cp and cp.exit_now:
             self.sell_all(coin, cd, f"exit_now: {cp.exit_reason}", prefix="nvx", human_only=True)
             return
+        if cp and cp.trend_exit_sma:
+            avg = sma(closes(cd.candles), cp.trend_exit_sma)
+            if avg is None:
+                self.d("ALERT", coin, f"trend exit SMA{cp.trend_exit_sma} unknown (too few closes): wrong-if still applies")
+            elif mark < avg:
+                # Planned exit, not a stop: it asks you in live mode (human_only); paper executes it.
+                self.sell_all(coin, cd, f"TREND EXIT: daily close {mark:g} < SMA{cp.trend_exit_sma} {avg:.6g}",
+                              prefix="nvt", human_only=True)
+                return
 
         msg = f"hold {pos['qty']:.8g} cost {pos['cost_usdt']:.2f} USDT, close {mark:g}, P/L {gain:+.1%}, wrong-if {w:g}"
         self.d("HOLD", coin, msg)
@@ -437,6 +446,14 @@ class Engine:
             ph = prior_high_close(cd.candles, 50)
             ok = ph is not None and cd.close > ph
             return ok, f"50d-high breakout {'yes' if ok else 'no'}"
+        if k in ("above_sma", "below_sma"):
+            n = int(v)
+            avg = sma(closes(cd.candles), n)
+            if avg is None:
+                return False, f"SMA{n} unknown (only {len(cd.candles)} closes)"
+            ok = cd.close > avg if k == "above_sma" else cd.close < avg
+            rel = (">" if cd.close > avg else "<=") if k == "above_sma" else ("<" if cd.close < avg else ">=")
+            return ok, f"close {cd.close:g} {rel} SMA{n} {avg:.6g}"
         if k == "calm_days":
             n = int(v.get("n", 2))
             floor = float(v["floor"])

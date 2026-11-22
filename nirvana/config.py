@@ -25,7 +25,7 @@ MANUAL_KEYS = {"etf_outflows", "etf_outflows_updated", "php_per_usdt", "php_per_
 BLACKOUT_KEYS = {"name", "coins", "start", "end"}
 COIN_KEYS = {"status", "narrative", "wrong_if", "tranches", "fill_by", "on_deadline", "deadline_max_price",
              "take_profit_levels", "alert_below", "alert_above", "max_pct", "meme", "paper_tested",
-             "exit_now", "exit_reason", "notes"}
+             "exit_now", "exit_reason", "notes", "trend_exit_sma"}
 TRANCHE_KEYS = {"id", "type", "price", "max_price", "php", "usdt", "when", "allow_in_risk_off",
                 "override_reason", "notes"}
 
@@ -179,6 +179,7 @@ class CoinPlan:
     paper_tested: bool
     exit_now: bool
     exit_reason: str | None
+    trend_exit_sma: int | None = None   # while holding: sell all on a daily close below this SMA (asks you in live)
 
 
 @dataclass
@@ -227,9 +228,22 @@ def _parse_condition(when, where: str) -> dict:
                 _num(v.get("max_tr_atr", 1.0), f"{where}.calm_days.max_tr_atr")
             elif k == "breakout_50d":
                 pass
+            elif k in ("above_sma", "below_sma"):
+                n = _num(v, f"{where}.when.{k}")
+                if n != int(n) or not 2 <= n <= 400:
+                    raise ConfigError(f"{where}.when.{k} must be a whole number of days (2-400)")
             else:
                 raise ConfigError(f"{where}.when: unknown condition '{k}'")
     return when
+
+
+def _trend_n(v, where: str) -> int | None:
+    if v is None:
+        return None
+    n = _num(v, f"{where}.trend_exit_sma")
+    if n != int(n) or not 2 <= n <= 400:
+        raise ConfigError(f"{where}.trend_exit_sma must be a whole number of days (2-400)")
+    return int(n)
 
 
 def load_plan(path: str | Path) -> Plan:
@@ -345,6 +359,7 @@ def load_plan(path: str | Path) -> Plan:
             paper_tested=bool(c.get("paper_tested", False)),
             exit_now=bool(c.get("exit_now", False)),
             exit_reason=c.get("exit_reason"),
+            trend_exit_sma=_trend_n(c.get("trend_exit_sma"), where),
         )
         if errs:
             plan.errors[coin] = errs
